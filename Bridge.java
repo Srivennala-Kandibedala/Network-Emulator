@@ -1,7 +1,11 @@
 import sun.misc.Signal;
 import sun.misc.SignalHandler;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -96,7 +100,11 @@ public class Bridge {
                                 System.out.println("Cannot accept connection");
                             }
                         } else if (socket.isReadable()) {
-                            handleClient(socket);
+                            try {
+                                handleClient(socket);
+                            } catch (ClassNotFoundException e) {
+                                e.printStackTrace();
+                            }
                         }
                     });
                     selector.selectedKeys().clear();
@@ -106,7 +114,7 @@ public class Bridge {
             throw new RuntimeException(e);
         }
     }
-    private static void handleClient(SelectionKey socket) {
+    private static void handleClient(SelectionKey socket) throws ClassNotFoundException {
         try {
             SocketChannel client = (SocketChannel) socket.channel();
             ByteBuffer bytes = ByteBuffer.allocate(1024);
@@ -121,12 +129,20 @@ public class Bridge {
             }
 
             bytes.flip();
-            String str = StandardCharsets.UTF_8.decode(bytes).toString();
+            byte[] serializedMessage = new byte[bytes.remaining()];
+            bytes.get(serializedMessage);
             bytes.clear();
+
+            // Deserialize the received message
+            String str = deserializeMessage(serializedMessage);          
+            // String str = StandardCharsets.UTF_8.decode(bytes).toString();
+            // bytes.clear();
 
             for (SocketChannel otherClient : activeClients) {
                 if (client != otherClient) {
-                    ByteBuffer byteBuffer = ByteBuffer.wrap(str.getBytes());
+                    // ByteBuffer byteBuffer = ByteBuffer.wrap(str.getBytes());
+                    byte[] serialized = serializeMessage(str);
+                    ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
                     otherClient.write(byteBuffer);
                 } else {
                     String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + str;
@@ -135,6 +151,21 @@ public class Bridge {
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+    }
+    private static byte[] serializeMessage(String message) throws IOException {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(message);
+            oos.flush();
+            return baos.toByteArray();
+        }
+    }
+
+    private static String deserializeMessage(byte[] serializedMessage) throws IOException, ClassNotFoundException {
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedMessage);
+             ObjectInputStream ois = new ObjectInputStream(bais)) {
+            return (String) ois.readObject();
         }
     }
 }

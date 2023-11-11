@@ -1,4 +1,5 @@
 import java.io.*;
+import java.nio.channels.Channels;
 import java.nio.channels.SocketChannel;
 import java.util.*;
 import sun.misc.Signal;
@@ -145,18 +146,19 @@ public class Station {
 
             receivingThread = new Thread(() -> {
                 try {
-                    ByteBuffer bytes = ByteBuffer.allocate(1024);
-                    while (socket.read(bytes) > 0) {
-                        bytes.flip();
-                        System.out.print("Received -> ");
-                        System.out.println(StandardCharsets.UTF_8.decode(bytes));
-                        bytes.clear();
+                    ObjectInputStream objectInputStream = new ObjectInputStream(Channels.newInputStream(socket));
+                    while (true) {
+                        try {
+                            // Deserialize the received message
+                            String receivedMessage = (String) objectInputStream.readObject();
+                            System.out.println("Received -> " + receivedMessage);
+                        } catch (ClassNotFoundException e) {
+                            e.printStackTrace();
+                        }
                     }
-
+                } catch (IOException ignore) {
                     System.out.println("Server Closed!");
                     quit();
-                } catch (IOException ignore) {
-
                 }
             });
             receivingThread.start();
@@ -164,8 +166,24 @@ public class Station {
             System.out.println("You can start chatting now. Press CTRL + C to quit.");
             String userInput;
             while ((userInput = scanner.nextLine()) != null) {
-                ByteBuffer byteBuffer = ByteBuffer.wrap(userInput.getBytes());
-                socket.write(byteBuffer);
+                try {
+                    // Serialize the message
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    ObjectOutputStream oos = new ObjectOutputStream(baos);
+                    oos.writeObject(userInput);
+                    oos.flush();
+
+                    // Send the serialized message
+                    ByteBuffer byteBuffer = ByteBuffer.wrap(baos.toByteArray());
+                    socket.write(byteBuffer);
+
+                    // Close the ObjectOutputStream to release resources
+                    oos.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                // ByteBuffer byteBuffer = ByteBuffer.wrap(userInput.getBytes());
+                // socket.write(byteBuffer);
             }
 
         } catch (IOException e) {
