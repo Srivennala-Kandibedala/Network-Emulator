@@ -3,9 +3,11 @@ import sun.misc.SignalHandler;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -18,7 +20,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+class SlTable implements Serializable {   
+    private static Map<String, Map<String, Object>> slCache = new HashMap<>();
+
+    private static void add(String destIP, String destMac) {
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("destMac", destMac);
+        entry.put("ttl", 60);
+
+        slCache.put(destIP, entry);
+    }
+}
 public class Bridge {
     String lan_name;
     String num_ports;
@@ -129,12 +145,15 @@ public class Bridge {
             }
 
             bytes.flip();
-            byte[] serializedMessage = new byte[bytes.remaining()];
+            byte[] serializedMessage = new byte[read];
             bytes.get(serializedMessage);
             bytes.clear();
-
+            try{
             // Deserialize the received message
-            String str = deserializeMessage(serializedMessage);          
+            Message str = deserializeMessage(serializedMessage);   
+            System.out.println(str.getMessage());       
+            System.out.println(str.getSourceIP());
+            System.out.println(str.getDestinationIP());
             // String str = StandardCharsets.UTF_8.decode(bytes).toString();
             // bytes.clear();
 
@@ -149,11 +168,22 @@ public class Bridge {
                     System.out.println(messageStr);
                 }
             }
+            } catch (EOFException e) {
+                e.printStackTrace();
+            // Handle the EOFException gracefully (e.g., close the socket)
+            System.out.println("Connection closed by the client: " + client.getRemoteAddress().toString().split("/")[1]);
+            activeClients.remove(client);
+            client.close();
+            socket.cancel();
+        } catch (IOException | ClassNotFoundException e) {
+            // Handle other exceptions
+            e.printStackTrace();
+        }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
-    private static byte[] serializeMessage(String message) throws IOException {
+    private static byte[] serializeMessage(Message message) throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(baos)) {
             oos.writeObject(message);
@@ -162,10 +192,10 @@ public class Bridge {
         }
     }
 
-    private static String deserializeMessage(byte[] serializedMessage) throws IOException, ClassNotFoundException {
+    private static Message deserializeMessage(byte[] serializedMessage) throws IOException, ClassNotFoundException {
         try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedMessage);
              ObjectInputStream ois = new ObjectInputStream(bais)) {
-            return (String) ois.readObject();
+            return (Message) ois.readObject();
         }
     }
 }
