@@ -1,5 +1,5 @@
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
+//import sun.misc.Signal;
+//import sun.misc.SignalHandler;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -24,41 +24,36 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-class SlTable implements Serializable {   
-    private static Map<String, Map<String, Object>> slCache = new HashMap<>();
-
-    private static void add(String destIP, String destMac) {
-        Map<String, Object> entry = new HashMap<>();
-        entry.put("destMac", destMac);
-        entry.put("ttl", 60);
-
-        slCache.put(destIP, entry);
-    }
-}
 public class Bridge {
     String lan_name;
     String num_ports;
-    public Bridge(String l_name, String n_ports){
+
+    private SlTable sl;
+
+    public Bridge(String l_name, String n_ports) {
         lan_name = l_name;
         num_ports = n_ports;
+        this.sl = new SlTable();
     }
-    private static final Signal SIGNAL = new Signal("INT");
+
+//    private static final Signal SIGNAL = new Signal("INT");
     public static List<SocketChannel> activeClients = new ArrayList<>();
     private static ServerSocketChannel serverChannel;
     private static Selector selector;
     private static boolean serverRunning = true;
-    private static final SignalHandler signalHandler = signal -> {
-        try {
-            serverRunning = false;
-            selector.keys().forEach(SelectionKey::cancel);
-            selector.close();
-            serverChannel.close();
-            System.out.println("Server Exiting...");
-            System.exit(0);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    };
+//    private static final SignalHandler signalHandler = signal -> {
+//        try {
+//            serverRunning = false;
+//            selector.keys().forEach(SelectionKey::cancel);
+//            selector.close();
+//            serverChannel.close();
+//            System.out.println("Server Exiting...");
+//            System.exit(0);
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+//    };
+
     private static void createAddressSymbolicLink(String lanName, String ipAddress) {
         try {
             Path linkPath = Paths.get("." + lanName + ".addr");
@@ -79,8 +74,9 @@ public class Bridge {
             throw new RuntimeException("Error creating port symbolic link: " + e.getMessage());
         }
     }
-    public static void main(String args[]){
-        Bridge b1 = new Bridge(args[0],args[1]);
+
+    public static void main(String args[]) {
+        Bridge b1 = new Bridge(args[0], args[1]);
         System.out.println(b1.lan_name + ',' + b1.num_ports);
         try {
             serverChannel = ServerSocketChannel.open();
@@ -91,11 +87,11 @@ public class Bridge {
 
             serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-            Signal.handle(SIGNAL, signalHandler);
+//            Signal.handle(SIGNAL, signalHandler);
 
             String ipAddress = serverChannel.socket().getInetAddress().getHostName();
             createAddressSymbolicLink(b1.lan_name, ipAddress);
-    
+
             int portNumber = serverChannel.socket().getLocalPort();
             createPortSymbolicLink(b1.lan_name, portNumber);
 
@@ -117,7 +113,7 @@ public class Bridge {
                             }
                         } else if (socket.isReadable()) {
                             try {
-                                handleClient(socket);
+                                handleClient(b1, socket);
                             } catch (ClassNotFoundException e) {
                                 e.printStackTrace();
                             }
@@ -130,7 +126,8 @@ public class Bridge {
             throw new RuntimeException(e);
         }
     }
-    private static void handleClient(SelectionKey socket) throws ClassNotFoundException {
+
+    private static void handleClient(Bridge bridge, SelectionKey socket) throws ClassNotFoundException {
         try {
             SocketChannel client = (SocketChannel) socket.channel();
             ByteBuffer bytes = ByteBuffer.allocate(1024);
@@ -145,57 +142,52 @@ public class Bridge {
             }
 
             bytes.flip();
-            byte[] serializedMessage = new byte[read];
-            bytes.get(serializedMessage);
+            byte[] serializedFrame = new byte[read];
+            bytes.get(serializedFrame);
             bytes.clear();
-            try{
-            // Deserialize the received message
-            Message str = deserializeMessage(serializedMessage);   
-            System.out.println(str.getMessage());       
-            System.out.println(str.getSourceIP());
-            System.out.println(str.getDestinationIP());
-            // String str = StandardCharsets.UTF_8.decode(bytes).toString();
-            // bytes.clear();
-
-            for (SocketChannel otherClient : activeClients) {
-                if (client != otherClient) {
-                    // ByteBuffer byteBuffer = ByteBuffer.wrap(str.getBytes());
-                    byte[] serialized = serializeMessage(str);
-                    ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
-                    otherClient.write(byteBuffer);
-                } else {
-                    String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + str;
-                    System.out.println(messageStr);
+            try {
+                // Deserialize the received message
+                EthernetFrame frame = deserializeFrame(serializedFrame);
+//                bridge.sl.add(frame.getSourceMac(), client); // define sl table properly [next implementation]
+                for (SocketChannel otherClient : activeClients) {
+                    if (client != otherClient) {
+                        byte[] serialized = serializedFrame(frame);
+                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                        System.out.println("Forwarding frame.....");
+                        otherClient.write(byteBuffer);
+                    } else {
+                        String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + frame;
+                    }
                 }
-            }
             } catch (EOFException e) {
                 e.printStackTrace();
-            // Handle the EOFException gracefully (e.g., close the socket)
-            System.out.println("Connection closed by the client: " + client.getRemoteAddress().toString().split("/")[1]);
-            activeClients.remove(client);
-            client.close();
-            socket.cancel();
-        } catch (IOException | ClassNotFoundException e) {
-            // Handle other exceptions
-            e.printStackTrace();
-        }
+                // Handle the EOFException gracefully (e.g., close the socket)
+                System.out.println("Connection closed by the client: " + client.getRemoteAddress().toString().split("/")[1]);
+                activeClients.remove(client);
+                client.close();
+                socket.cancel();
+            } catch (IOException | ClassNotFoundException e) {
+                // Handle other exceptions
+                e.printStackTrace();
+            }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
-    private static byte[] serializeMessage(Message message) throws IOException {
+
+    private static byte[] serializedFrame(EthernetFrame frame) throws IOException {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(baos)) {
-            oos.writeObject(message);
+            oos.writeObject(frame);
             oos.flush();
             return baos.toByteArray();
         }
     }
 
-    private static Message deserializeMessage(byte[] serializedMessage) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedMessage);
+    private static EthernetFrame deserializeFrame(byte[] serializedFrame) throws IOException, ClassNotFoundException {
+        try (ByteArrayInputStream bais = new ByteArrayInputStream(serializedFrame);
              ObjectInputStream ois = new ObjectInputStream(bais)) {
-            return (Message) ois.readObject();
+            return (EthernetFrame) ois.readObject();
         }
     }
 }

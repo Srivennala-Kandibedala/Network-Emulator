@@ -1,9 +1,11 @@
 import java.io.*;
+import java.nio.CharBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.SocketChannel;
 import java.util.*;
-import sun.misc.Signal;
-import sun.misc.SignalHandler;
+
+//import sun.misc.Signal;
+//import sun.misc.SignalHandler;
 
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -13,145 +15,92 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-class Message implements Serializable {
-    private String sourceIP;
-    private String destinationIP;
-    private String message;
-
-    public Message(String sourceIP, String destinationIP, String message) {
-        this.sourceIP = sourceIP;
-        this.destinationIP = destinationIP;
-        this.message = message;
-    }
-
-    public byte[] serialize() throws IOException {
-        try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                ObjectOutputStream out = new ObjectOutputStream(bos)) {
-            out.writeObject(this);
-            return bos.toByteArray();
-        }
-    }
-
-    // Static method to deserialize a byte array into a Message object
-    public static Message deserialize(byte[] bytes) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes); ObjectInput in = new ObjectInputStream(bis)) {
-            return (Message) in.readObject();
-        }
-    }
-
-    public String getMessage() {
-        return this.message;
-    }
-
-    public String getSourceIP() {
-        return this.sourceIP;
-    }
-
-    public String getDestinationIP() {
-        return this.destinationIP;
-    }
-}
-
-class Arp implements Serializable {
-    private static Map<String, Map<String, Object>> arpCache = new HashMap<>();
-
-    private static void addArpCache(String destIP, String destMac) {
-        Map<String, Object> entry = new HashMap<>();
-        entry.put("destMac", destMac);
-        entry.put("ttl", 60);
-
-        arpCache.put(destIP, entry);
-    }
-}
-
-class ArpRequest implements Serializable {
-    private String srcIP;
-    private String srcMac;
-    private String destIP;
-    private String destMac;
-
-    public ArpRequest(String srcIP, String srcMac, String destIP) {
-        this.srcIP = srcIP;
-        this.srcMac = srcMac;
-        this.destIP = destIP;
-        this.destMac = (destMac == null) ? "FF:FF:FF:FF:FF:FF" : destMac;
-    }
-}
-
-class Ethernet implements Serializable {
-    private String srcIP;
-    private String srcMac;
-    private String destIP;
-    private String destMac;
-    private Message ipPacket;
-
-    public Ethernet(String srcIP, String srcMac, String destIP, Message ipPacket) {
-        this.srcIP = srcIP;
-        this.srcMac = srcMac;
-        this.destIP = destIP;
-        this.destMac = (destMac == null) ? "FF:FF:FF:FF:FF:FF" : destMac;
-        this.ipPacket = ipPacket;
-    }
-}
-
 public class Station {
     String comp_name, iface, rtable, htable;
-    private static final Signal SIGNAL = new Signal("INT");
-    private static final SignalHandler signalHandler = signal -> {
-        quit();
-    };
+    //    private static final Signal SIGNAL = new Signal("INT");
+//    private static final SignalHandler signalHandler = signal -> {
+//        quit();
+//    };
     private static SocketChannel socket;
+    private static String ifaceName;
     private static Thread receivingThread;
-    private static Map<SocketChannel, String> socketFdToIP = new HashMap<>();
+    private static Map<SocketChannel, String> socketFdToIfaceName = new HashMap<>();
+    private static Map<String, SocketChannel> ifaceNameTosocketFd = new HashMap<>();
+    private Arp arpCache;
+    private EthernetFrame ethernetFrame;
+
+    private PendingQueue pq;
 
     public Station(String name, String i_face, String r_table, String h_table) {
+//        super();
         comp_name = name;
         iface = i_face;
         rtable = r_table;
         htable = h_table;
-        Arp arpCache = new Arp();
+        arpCache = new Arp();
+        pq = new PendingQueue();
+        ethernetFrame = new EthernetFrame();
     }
 
-    private String findNextHop(String destinationIP, Vector<Vector<String>> rtable) {
+    private Map<String, String> findNextHop(String destinationIP, Vector<Vector<String>> rtable, Vector<Vector<String>> iface) {
+        Map<String, String> hopAndIface = new HashMap<>();
         for (Vector<String> line : rtable) {
             String nextHop = line.get(1);
             String subnetMask = line.get(2);
-            String rtableIP = line.get(0);
+            String tableIP = line.get(0);
+            String nextIface = line.get(3);
 
             String[] destParts = destinationIP.split("\\.");
-            String[] rtableIPParts = rtableIP.split("\\.");
+            String[] tableIPParts = tableIP.split("\\.");
             String[] subnetParts = subnetMask.split("\\.");
 
             boolean match = true;
             for (int i = 0; i < 4; i++) {
                 int destValue = Integer.parseInt(destParts[i]);
-                int rtableIPValueInt = Integer.parseInt(rtableIPParts[i]);
+                int tableIPValueInt = Integer.parseInt(tableIPParts[i]);
                 int subnetValue = Integer.parseInt(subnetParts[i]);
 
-                if ((destValue & subnetValue) != (rtableIPValueInt & subnetValue)) {
+                if ((destValue & subnetValue) != (tableIPValueInt)) {
                     match = false;
                     break;
                 }
             }
             if (match) {
                 if (!nextHop.equals("0.0.0.0")) {
-                    return nextHop;
+                    hopAndIface.put("nextHop", nextHop);
                 } else {
-                    return destinationIP;
+                    hopAndIface.put("nextHop", destinationIP);
                 }
+//                for (Vector<String> ifaceLine : iface) {
+//                    if (ifaceLine.get(0).equals(nextIface)) {
+//                        hopAndIface.put("nextIface", ifaceLine.get(4));
+//                        break;
+//                    }
+//                }
+                hopAndIface.put("nextIface", nextIface);
+                return hopAndIface;
             }
         }
 
         for (Vector<String> line : rtable) {
-            String subnetMask = line.get(3);
+            String subnetMask = line.get(2);
             if (subnetMask.equals("0.0.0.0")) {
-                return line.get(1);
+                hopAndIface.put("nextHop", line.get(1));
+//                for (Vector<String> ifaceLine : iface) {
+//                    if (ifaceLine.get(0).equals(line.get(3))) {
+//                        hopAndIface.put("nextIface", ifaceLine.get(4));
+//                        break;
+//                    }
+//                }
+                hopAndIface.put("nextIface", line.get(3));
+                return hopAndIface;
             }
         }
         return null;
     }
 
     public static void main(String[] args) {
+        // [potti] - implement args len validation for user cmd line args
         Station s1 = new Station(args[0], args[1], args[2], args[3]);
         System.out.println();
         System.out.println("initializing..");
@@ -161,113 +110,175 @@ public class Station {
         System.out.println();
         System.out.println("reading hosts...");
         Map<String, Vector<String>> hostData = loadAndPrintHosts("hosts");
-
-        try {
-            if (args.length < 2) {
-                System.out.println("Usage: java chatclient <host name> <port>");
-                return;
-            }
-            String ipAddress = "", portNumber = "";
-            for (Vector<String> line : ifaceData) {
+//
+////        try {
+//        if (args.length < 2) {
+//            System.out.println("Usage: java chatclient <host name> <port>");
+//            return; // should close the program -[potti]
+//        }
+        String ipAddress = "", portNumber = "";
+        for (Vector<String> line : ifaceData) {
+            try {
                 Path addressLink = Paths.get("." + line.lastElement() + ".addr");
                 ipAddress = Files.readSymbolicLink(addressLink).toString();
 
                 Path portLink = Paths.get("." + line.lastElement() + ".port");
                 portNumber = Files.readSymbolicLink(portLink).toString();
-            }
-            socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
-            for (Vector<String> line : ifaceData) {
-                if (line.get(0).equals(socket)) {
-                    String ip = line.get(1);
-                    socketFdToIP.put(socket, ip);
-                    // ifacetofd(ifcae,socket)
-                    break;
-                }
-            }
-            Scanner scanner = new Scanner(System.in);
-            Signal.handle(SIGNAL, signalHandler);
-            System.out.println("Connected to the Chat Server at: " + socket.socket().getRemoteSocketAddress()
-                    + " through port " + socket.socket().getLocalPort());
 
-            receivingThread = new Thread(() -> {
-                System.out.println("You can start chatting now. Press CTRL + C to quit.");
-                String userInput;
-                while ((userInput = scanner.nextLine()) != null) {
-                    try {
-                        List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
-                        if (!userInputVector.isEmpty()) {
-                            String firstElement = userInputVector.get(0);
-                            if (firstElement.equals("show")) {
-                                String secondElement = userInputVector.get(1);
-                                if (secondElement.equals(secondElement)) {
-                                    Map<String, Vector<String>> hosts = loadAndPrintHosts("hosts");
-                                }
-                            } else if (firstElement.equals("send")) {
-                                if (userInputVector.size() >= 3) {
-                                    String destinationStation = userInputVector.get(1);
-                                    if (hostData.containsKey(destinationStation)) {
-                                        String destinationIP = hostData.get(destinationStation).get(1);
-                                        String nextHop = s1.findNextHop(destinationIP, rtableData);
-                                        if (nextHop != null) {
-                                            Message outgoingMessage = new Message(socketFdToIP.get(socket),
-                                                    destinationIP, userInputVector.get(2));
-                                            System.out.println(outgoingMessage.getMessage());
-                                            System.out.println(destinationIP);
-                                            System.out.println(socketFdToIP.get(socket));
-                                            byte[] serializedMessage = outgoingMessage.serialize();
-                                            ByteBuffer byteBuffer = ByteBuffer.wrap(serializedMessage);
-                                            socket.write(byteBuffer);
-                                            System.out.println("Message sent to " + destinationStation);
-                                        } else {
-                                            System.out.println("Next hop not found for " + destinationStation);
-                                        }
-                                    } else {
-                                        System.out.println("Station not found: " + destinationStation);
+                socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
+//                System.out.println("---------------------" + socket);
+//            for (Vector<String> line : ifaceData) {
+//                if() {
+                String ip = line.get(1);
+                socketFdToIfaceName.put(socket, line.get(0));
+                ifaceNameTosocketFd.put(line.get(0), socket);
+//                    break;
+//                }
+//            }
+                Scanner scanner = new Scanner(System.in);
+//                Signal.handle(SIGNAL, signalHandler);
+                System.out.println("Connected to the Chat Server at: " + socket.socket().getRemoteSocketAddress() + " through port " + socket.socket().getLocalPort());
+
+                receivingThread = new Thread(() -> {
+                    System.out.println("You can start chatting now. Press CTRL + C to quit.");
+                    String userInput;
+                    while ((userInput = scanner.nextLine()) != null) {
+                        try {
+                            List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
+                            if (!userInputVector.isEmpty()) {
+                                String firstElement = userInputVector.get(0);
+                                if (firstElement.equals("show")) {
+                                    String secondElement = userInputVector.get(1);
+                                    if (secondElement.equals(secondElement)) {
+                                        Map<String, Vector<String>> hosts = loadAndPrintHosts("hosts");
                                     }
+                                } else if (firstElement.equals("send")) {
+                                    if (userInputVector.size() >= 3) {
+                                        String destinationStation = userInputVector.get(1);
+                                        if (hostData.containsKey(destinationStation)) {
+                                            String destinationIP = hostData.get(destinationStation).get(1);
+                                            Map<String, String> nextHopNdNextIface = s1.findNextHop(destinationIP, rtableData, ifaceData);
+                                            if (nextHopNdNextIface != null) {
+                                                System.out.println("# Next Hop IP: " + nextHopNdNextIface.get("nextHop"));
+                                                System.out.println("# Next iface: " + nextHopNdNextIface.get("nextIface"));
+                                                String srcIP = hostData.get(socketFdToIfaceName.get(socket)).get(1);
+                                                Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
+
+                                                String srcMac = null;
+                                                for (Vector<String> ifaceRow : ifaceData) {
+                                                    String ifaceIP = ifaceRow.get(1);
+                                                    if (srcIP.equals(ifaceIP)) {
+                                                        srcMac = ifaceRow.get(3);
+                                                        break;
+                                                    }
+                                                }
+//                                                    ArpRequest arpRequest = new ArpRequest("ARP_REQUEST", srcIP, srcMac, destinationIP);
+//                                                    System.out.println("arp req=> "+arpRequest);
+                                                SocketChannel fd = ifaceNameTosocketFd.get(nextHopNdNextIface.get("nextIface"));
+                                                System.out.println("socket=> " + fd);
+//                                                    byte[] serializedArp = arpRequest.serialize();
+//                                                    ByteBuffer buffer = ByteBuffer.wrap(serializedArp);
+                                                if (Objects.equals(s1.arpCache.getMac(destinationIP), "")) {
+                                                    System.out.println("Entry not in ARP cache \nSending an ARP request from interface " + line.get(0));
+                                                    System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
+                                                    s1.pq.addPendingPacket(nextHopNdNextIface.get("nextHop"), outgoingMessage);
+                                                    s1.ethernetFrame.createArp("ARP_REQUEST", srcIP, destinationIP, srcMac, "FF:FF:FF:FF");
+                                                    byte[] serializedFrame = s1.ethernetFrame.serialize();
+                                                    ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
+                                                    fd.write(frameBuffer);
+                                                } else {
+                                                    System.out.println("Entry in ARP table \nSending ethernet frame to next hop");
+                                                    System.out.println("******IPPacket details*****");
+                                                    System.out.println("Message: " + outgoingMessage.getMessage());
+                                                    System.out.println("Destination IP: " + destinationIP);
+                                                    System.out.println("Source IP: " + srcIP);
+                                                    System.out.println("***************************");
+                                                    byte[] serializedMessage = outgoingMessage.serialize();
+                                                    ByteBuffer byteBuffer = ByteBuffer.wrap(serializedMessage);
+                                                    socket.write(byteBuffer);
+                                                    System.out.println("Message sent to " + destinationStation);
+                                                }
+                                            } else {
+                                                System.out.println("Next hop not found for " + destinationStation);
+                                            }
+                                        } else {
+                                            System.out.println("Station not found: " + destinationStation);
+                                        }
+                                    }
+                                } else {
+                                    System.out.println("Invalid command: " + firstElement);
                                 }
                             } else {
-                                System.out.println("Invalid command: " + firstElement);
+                                System.out.println("Empty input vector");
                             }
-                        } else {
-                            System.out.println("Empty input vector");
+                        } catch (IOException e) {
+                            e.printStackTrace();
                         }
-                    } catch (IOException e) {
-                        e.printStackTrace();
                     }
-                }
-            });
-            receivingThread.start();
+                });
+                receivingThread.start();
 
-        } catch (IOException e) {
-            System.out.println("Unable to create socket!");
-        }
-
-        try {
-            // ObjectInputStream objectInputStream = new
-            // ObjectInputStream(Channels.newInputStream(socket));
-            // while (true) {
-            // try {
-
-            // byte[] serializedMessage = (byte[]) objectInputStream.readObject();
-            // // String receivedMessage = (String) objectInputStream.readObject();
-            // // System.out.println("Received -> " + receivedMessage);
-            // Message receivedMessage = Message.deserialize(serializedMessage);
-            // System.out.println("Received -> " + receivedMessage.getMessage());
-            // } catch (ClassNotFoundException e) {
-            // e.printStackTrace();
-            // }
-            // }
-            ByteBuffer bytes = ByteBuffer.allocate(1024);
-            while (socket.read(bytes) > 0) {
-                bytes.flip();
-                System.out.print("Received -> ");
-                System.out.println(StandardCharsets.UTF_8.decode(bytes));
-                bytes.clear();
+            } catch (IOException e) {
+                System.out.println("Unable to create socket!");
             }
-        } catch (IOException ignore) {
-            ignore.printStackTrace();
-            System.out.println("Server Closed!");
-            quit();
+
+            try {
+                ByteBuffer bytes = ByteBuffer.allocate(4096);
+                while (socket.read(bytes) > 0) {
+                    bytes.flip();
+                    System.out.println("Received ethernet frame ");
+                    EthernetFrame ethernetFrame = EthernetFrame.deserialize(bytes);
+                    if (Objects.equals(ethernetFrame.getType(), "ARP_REQUEST")) {
+                        System.out.println("Received arp request");
+                        if (Objects.equals(ethernetFrame.getDestinationIP(), line.get(1))) {
+                            System.out.println("The ARP request is for me!");
+                            System.out.println("Sending back ARP response");
+                            s1.ethernetFrame.createArp("ARP_RESPONSE", ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), line.get(3), ethernetFrame.getSourceMac());
+                            byte[] serializedFrame = s1.ethernetFrame.serialize();
+                            ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
+                            socket.write(frameBuffer);
+                        }
+                    }
+                    else if (Objects.equals(ethernetFrame.getType(), "ARP_RESPONSE")) {
+                        System.out.println("Received an arp response");
+                        if (Objects.equals(ethernetFrame.getDestinationMac(), line.get(3))) {
+                            System.out.println("The ARP response is for me!");
+                            // get packet from pending queue
+                            List<Message> packets = s1.pq.getPendingPacket(ethernetFrame.getSourceIP());
+//                            System.out.println("packets "+packets);
+                            for (Message packet : packets) {
+                                System.out.println("Sending dataframe to destination");
+                                s1.ethernetFrame.createDF("DATAFRAME", packet, ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), ethernetFrame.getDestinationMac(), ethernetFrame.getSourceMac());
+                                byte[] serializedFrame = s1.ethernetFrame.serialize();
+                                ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
+                                socket.write(frameBuffer);
+                            }
+                        }
+                    }
+                    else if (Objects.equals(ethernetFrame.getType(), "DATAFRAME")) {
+                        System.out.println("Received dataframe");
+                        if (Objects.equals(ethernetFrame.getDestinationMac(), line.get(3))) {
+                            if(Objects.equals(ethernetFrame.getDestinationIP(), line.get(1))){
+                                Message packet = ethernetFrame.getPacket();
+                                System.out.println("Message: " + packet.getMessage());
+                                System.out.println("Src IP: " + packet.getSourceIP());
+                                System.out.println("Dest IP: " + packet.getDestinationIP());
+                            }
+                            else {
+                                System.out.println("Received dataframe but this is not for me");
+                                System.out.println("Going for nexthop");
+                            }
+                        }
+                    }
+                    bytes.clear();
+                }
+            } catch (IOException ignore) {
+                ignore.printStackTrace();
+                System.out.println("Server Closed!");
+                quit();
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
