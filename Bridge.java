@@ -19,10 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class Bridge {
     String lan_name;
@@ -36,7 +33,7 @@ public class Bridge {
         this.sl = new SlTable();
     }
 
-//    private static final Signal SIGNAL = new Signal("INT");
+    //    private static final Signal SIGNAL = new Signal("INT");
     public static List<SocketChannel> activeClients = new ArrayList<>();
     private static ServerSocketChannel serverChannel;
     private static Selector selector;
@@ -146,19 +143,54 @@ public class Bridge {
             bytes.get(serializedFrame);
             bytes.clear();
             try {
-                // Deserialize the received message
                 EthernetFrame frame = deserializeFrame(serializedFrame);
-//                bridge.sl.add(frame.getSourceMac(), client); // define sl table properly [next implementation]
-                for (SocketChannel otherClient : activeClients) {
-                    if (client != otherClient) {
-                        byte[] serialized = serializedFrame(frame);
-                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
+                byte[] serialized = serializedFrame(frame);
+                ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                if (Objects.equals(frame.getType(), "DATAFRAME")) {
+                    if (bridge.sl.isKey(frame.getDestinationMac())) {
+                        SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
                         System.out.println("Forwarding frame.....");
-                        otherClient.write(byteBuffer);
+                        destFD.write(byteBuffer);
                     } else {
-                        String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + frame;
+//                        byte[] serialized = serializedFrame(frame);
+//                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                        System.out.println("Found no entry in SL table. Broadcasting frame.....");
+                        for (SocketChannel otherClient : activeClients) {
+                            if (client != otherClient) {
+                                otherClient.write(byteBuffer);
+                            }
+                        }
                     }
+                } else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
+                    if (Objects.equals(frame.getDestinationIP(), frame.getSourceIP())) {
+                        System.out.println("Sending ARP request to self");
+                        client.write(byteBuffer);
+                    } else {
+                        for (SocketChannel otherClient : activeClients) {
+                            if (client != otherClient) {
+//                            byte[] serialized = serializedFrame(frame);
+//                            ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                                System.out.println("Sending ARP request.....");
+                                otherClient.write(byteBuffer);
+                            }
+                        }
+                    }
+                } else if (Objects.equals(frame.getType(), "ARP_RESPONSE")) {
+                    System.out.println("Received arp response");
+                    SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
+                    destFD.write(byteBuffer);
                 }
+//                for (SocketChannel otherClient : activeClients) {
+//                    if (client != otherClient) {
+//                        byte[] serialized = serializedFrame(frame);
+//                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+//                        System.out.println("Broadcasting frame.....");
+//                        otherClient.write(byteBuffer);
+//                    } else {
+//                        String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + frame;
+//                    }
+//                }
             } catch (EOFException e) {
                 e.printStackTrace();
                 // Handle the EOFException gracefully (e.g., close the socket)
