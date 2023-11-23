@@ -5,7 +5,7 @@ import java.util.Map;
 class Arp implements Serializable {
     private static Map<String, Map<String, Object>> arpCache = new HashMap<>();
 
-    private static void addArpCache(String destIP, String destMac) {
+    static void addArpCache(String destIP, String destMac) {
         Map<String, Object> entry = new HashMap<>();
         entry.put("destMac", destMac);
         entry.put("ttl", 60);

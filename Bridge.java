@@ -147,7 +147,7 @@ public class Bridge {
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
                 ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
-                System.out.println("=> " + frame.getType() + activeClients.indexOf(client) + frame.toString());
+                System.out.println("=> " + frame.getType() + activeClients.indexOf(client));
                 if (Objects.equals(frame.getType(), "DATAFRAME")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
@@ -157,6 +157,7 @@ public class Bridge {
                         System.out.println("Found no entry in SL table. Broadcasting frame.....");
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
+                                System.out.println(byteBuffer.array());
                                 otherClient.write(byteBuffer);
                             }
                         }
@@ -170,6 +171,7 @@ public class Bridge {
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
                                 System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
+                                System.out.println(byteBuffer.array().length);
                                 otherClient.write(byteBuffer);
                             }
                         }
