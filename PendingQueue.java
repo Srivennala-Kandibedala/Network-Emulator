@@ -15,7 +15,7 @@ class PendingQueue implements Serializable {
     public void addPendingPacket(String nextHopIP, Message packet) {
 //        this.pendingPackets.put(nextHopIP, packet);
         this.pendingPackets.computeIfAbsent(nextHopIP, k -> new ArrayList<>()).add(packet);
-        this.printPendingQueue();
+//        this.printPendingQueue();
     }
 
     public List<Message> getPendingPacket(String nextHopIP) {

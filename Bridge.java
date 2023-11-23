@@ -128,7 +128,7 @@ public class Bridge {
         try {
             SocketChannel client = (SocketChannel) socket.channel();
             ByteBuffer bytes = ByteBuffer.allocate(1024);
-
+            System.out.println("size: "+activeClients.size());
             int read = client.read(bytes);
             if (read < 0) {
                 System.out.println("Disconnected from: " + client.getRemoteAddress().toString().split("/")[1]);
@@ -147,14 +147,13 @@ public class Bridge {
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
                 ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+                System.out.println("=> " + frame.getType() + activeClients.indexOf(client) + frame.toString());
                 if (Objects.equals(frame.getType(), "DATAFRAME")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                        System.out.println("Forwarding frame.....");
+                        System.out.println("Forwarding frame....."+activeClients.indexOf(destFD));
                         destFD.write(byteBuffer);
                     } else {
-//                        byte[] serialized = serializedFrame(frame);
-//                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
                         System.out.println("Found no entry in SL table. Broadcasting frame.....");
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
@@ -163,15 +162,14 @@ public class Bridge {
                         }
                     }
                 } else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
-                    if (Objects.equals(frame.getDestinationIP(), frame.getSourceIP())) {
+                    if (bridge.sl.isKey(frame.getDestinationMac())) {
+                        SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
                         System.out.println("Sending ARP request to self");
-                        client.write(byteBuffer);
+                        destFD.write(byteBuffer);
                     } else {
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
-//                            byte[] serialized = serializedFrame(frame);
-//                            ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
-                                System.out.println("Sending ARP request.....");
+                                System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
                                 otherClient.write(byteBuffer);
                             }
                         }
@@ -181,16 +179,6 @@ public class Bridge {
                     SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
                     destFD.write(byteBuffer);
                 }
-//                for (SocketChannel otherClient : activeClients) {
-//                    if (client != otherClient) {
-//                        byte[] serialized = serializedFrame(frame);
-//                        ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
-//                        System.out.println("Broadcasting frame.....");
-//                        otherClient.write(byteBuffer);
-//                    } else {
-//                        String messageStr = otherClient.getRemoteAddress().toString().split("/")[1] + " -> " + frame;
-//                    }
-//                }
             } catch (EOFException e) {
                 e.printStackTrace();
                 // Handle the EOFException gracefully (e.g., close the socket)
