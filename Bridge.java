@@ -105,6 +105,8 @@ public class Bridge {
                                 client.register(selector, SelectionKey.OP_READ);
                                 activeClients.add(client);
                                 System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
+                                EthernetFrame ethernetFrame = new EthernetFrame();
+                                client.write(ByteBuffer.wrap(ethernetFrame.serialize()));
                             } catch (IOException e) {
                                 System.out.println("Cannot accept connection");
                             }
@@ -141,7 +143,7 @@ public class Bridge {
             bytes.flip();
             byte[] serializedFrame = new byte[read];
             bytes.get(serializedFrame);
-            bytes.clear();
+
             try {
                 EthernetFrame frame = deserializeFrame(serializedFrame);
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
@@ -172,7 +174,8 @@ public class Bridge {
                             if (client != otherClient) {
                                 System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
                                 System.out.println(byteBuffer.array().length);
-                                otherClient.write(byteBuffer);
+                                ByteBuffer byteBuffer2 = ByteBuffer.wrap(serialized);
+                                otherClient.write(byteBuffer2);
                             }
                         }
                     }
