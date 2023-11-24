@@ -105,8 +105,8 @@ public class Bridge {
                                 client.register(selector, SelectionKey.OP_READ);
                                 activeClients.add(client);
                                 System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
-                                EthernetFrame ethernetFrame = new EthernetFrame();
-                                client.write(ByteBuffer.wrap(ethernetFrame.serialize()));
+//                                EthernetFrame ethernetFrame = new EthernetFrame();
+//                                client.write(ByteBuffer.wrap(ethernetFrame.serialize()));
                             } catch (IOException e) {
                                 System.out.println("Cannot accept connection");
                             }
@@ -148,41 +148,40 @@ public class Bridge {
                 EthernetFrame frame = deserializeFrame(serializedFrame);
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
-                ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+//                ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
                 System.out.println("=> " + frame.getType() + activeClients.indexOf(client));
                 if (Objects.equals(frame.getType(), "DATAFRAME")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
                         System.out.println("Forwarding frame....."+activeClients.indexOf(destFD));
-                        destFD.write(byteBuffer);
+                        destFD.write(ByteBuffer.wrap(serialized));
                     } else {
                         System.out.println("Found no entry in SL table. Broadcasting frame.....");
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
-                                System.out.println(byteBuffer.array());
-                                otherClient.write(byteBuffer);
+//                                System.out.println(byteBuffer.array());
+                                otherClient.write(ByteBuffer.wrap(serialized));
                             }
                         }
                     }
                 } else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                        System.out.println("Sending ARP request to self");
-                        destFD.write(byteBuffer);
+                        destFD.write(ByteBuffer.wrap(serialized));
                     } else {
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
                                 System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
-                                System.out.println(byteBuffer.array().length);
-                                ByteBuffer byteBuffer2 = ByteBuffer.wrap(serialized);
-                                otherClient.write(byteBuffer2);
+//                                System.out.println(byteBuffer.array().length);
+//                                ByteBuffer byteBuffer2 = ByteBuffer.wrap(serialized);
+                                otherClient.write(ByteBuffer.wrap(serialized));
                             }
                         }
                     }
                 } else if (Objects.equals(frame.getType(), "ARP_RESPONSE")) {
                     System.out.println("Received arp response");
                     SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                    destFD.write(byteBuffer);
+                    destFD.write(ByteBuffer.wrap(serialized));
                 }
             } catch (EOFException e) {
                 e.printStackTrace();

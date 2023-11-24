@@ -13,11 +13,12 @@ class Arp implements Serializable {
     }
 
     static String getMac(String destIP) {
-        Object macObject = arpCache.get(destIP);
+        String mac = "";
+        if (arpCache.containsKey(destIP)){
+            mac = (String) arpCache.get(destIP).get("destMac");
+        }
 
-        if (macObject != null) {
-            String mac = macObject.toString();
-            System.out.println("Fetching mac => " + mac);
+        if (mac != "") {
             return mac;
         } else {
             System.out.println("Mac not found for " + destIP);
