@@ -15,7 +15,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -27,14 +27,21 @@ public class Bridge {
 
     private SlTable sl;
 
+    private static final Scanner scanner = new Scanner(System.in);
+    private static Thread receivingThread;
+
     public Bridge(String l_name, String n_ports) {
         lan_name = l_name;
         num_ports = n_ports;
         this.sl = new SlTable();
+        this.sl.myTimer();
     }
 
     //    private static final Signal SIGNAL = new Signal("INT");
     public static List<SocketChannel> activeClients = new ArrayList<>();
+
+//    public static List<SocketChannel> activeClients = Collections.synchronizedList(nrmlList);
+
     private static ServerSocketChannel serverChannel;
     private static Selector selector;
     private static boolean serverRunning = true;
@@ -92,9 +99,41 @@ public class Bridge {
             int portNumber = serverChannel.socket().getLocalPort();
             createPortSymbolicLink(b1.lan_name, portNumber);
 
+            receivingThread = new Thread(() -> {
+                String userInput;
+                while ((userInput = scanner.nextLine()) != null) {
+                    try {
+                        List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
+                        if (!userInputVector.isEmpty()) {
+                            System.out.println("userINput: " + userInputVector);
+
+                            if (userInputVector.get(0).equals("quit")) {
+                                ServerSocketChannel mainChannel = serverChannel;
+                                List<SocketChannel> connectedStations = activeClients;
+                                for (SocketChannel connectedStation : connectedStations
+                                ) {
+                                    System.out.println("Disconnecting station " + connectedStation.getRemoteAddress().toString().split("/")[1]);
+//                                    connectedStations.remove(connectedStation);
+                                    connectedStation.close();
+                                }
+                                mainChannel.close();
+                                System.exit(0);
+                            }
+                            else if (userInputVector.get(0).equals("show") && userInputVector.get(1).equals("sl")) {
+                                b1.sl.printSl();
+                            }
+                            else{
+                                System.out.println("Not a correct command");
+                            }
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+            receivingThread.start();
             while (serverRunning) {
                 selector.select();
-
                 if (serverRunning) {
                     selector.selectedKeys().forEach((socket) -> {
                         if (socket.isAcceptable()) {
@@ -128,7 +167,7 @@ public class Bridge {
         try {
             SocketChannel client = (SocketChannel) socket.channel();
             ByteBuffer bytes = ByteBuffer.allocate(1024);
-            System.out.println("size: "+activeClients.size());
+//            System.out.println("size: "+activeClients.size());
             int read = client.read(bytes);
             if (read < 0) {
                 System.out.println("Disconnected from: " + client.getRemoteAddress().toString().split("/")[1]);
@@ -141,43 +180,47 @@ public class Bridge {
             bytes.flip();
             byte[] serializedFrame = new byte[read];
             bytes.get(serializedFrame);
-            bytes.clear();
+
             try {
                 EthernetFrame frame = deserializeFrame(serializedFrame);
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
-                ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
-                System.out.println("=> " + frame.getType() + activeClients.indexOf(client) + frame.toString());
+//                ByteBuffer byteBuffer = ByteBuffer.wrap(serialized);
+//                System.out.println("=> " + frame.getType() + activeClients.indexOf(client));
                 if (Objects.equals(frame.getType(), "DATAFRAME")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
+                        bridge.sl.resetTTl(frame.getDestinationMac());
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
                         System.out.println("Forwarding frame....."+activeClients.indexOf(destFD));
-                        destFD.write(byteBuffer);
+                        destFD.write(ByteBuffer.wrap(serialized));
                     } else {
                         System.out.println("Found no entry in SL table. Broadcasting frame.....");
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
-                                otherClient.write(byteBuffer);
+//                                System.out.println(byteBuffer.array());
+                                otherClient.write(ByteBuffer.wrap(serialized));
                             }
                         }
                     }
                 } else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
                     if (bridge.sl.isKey(frame.getDestinationMac())) {
+                        bridge.sl.resetTTl(frame.getDestinationMac());
                         SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                        System.out.println("Sending ARP request to self");
-                        destFD.write(byteBuffer);
+                        destFD.write(ByteBuffer.wrap(serialized));
                     } else {
                         for (SocketChannel otherClient : activeClients) {
                             if (client != otherClient) {
                                 System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
-                                otherClient.write(byteBuffer);
+//                                System.out.println(byteBuffer.array().length);
+//                                ByteBuffer byteBuffer2 = ByteBuffer.wrap(serialized);
+                                otherClient.write(ByteBuffer.wrap(serialized));
                             }
                         }
                     }
                 } else if (Objects.equals(frame.getType(), "ARP_RESPONSE")) {
                     System.out.println("Received arp response");
                     SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                    destFD.write(byteBuffer);
+                    destFD.write(ByteBuffer.wrap(serialized));
                 }
             } catch (EOFException e) {
                 e.printStackTrace();
