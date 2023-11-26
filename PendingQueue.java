@@ -20,7 +20,7 @@ class PendingQueue implements Serializable {
 
     public List<Message> getPendingPacket(String nextHopIP) {
         System.out.println("pending queue nexthop "+ nextHopIP);
-        System.out.println(this.pendingPackets.get(nextHopIP));
+//        System.out.println(this.pendingPackets.get(nextHopIP));
         return this.pendingPackets.get(nextHopIP);
     }
 
