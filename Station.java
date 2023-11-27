@@ -103,10 +103,14 @@ public class Station {
                                         Vector<String> nextIface = socketFdToIfaceName.get(next_fd);
                                         String srcIP = nextIface.get(1);
                                         String srcMac = nextIface.get(3);
-//                                        System.out.println("check ip"+srcIP+nextHopNdNextIface.get("nextHop"));
-                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
+                                        StringBuilder messageBuilder = new StringBuilder();
+                                        for (int i = 2; i < userInputVector.size(); i++) {
+                                            messageBuilder.append(userInputVector.get(i)).append(" ");
+                                        }
+                                        String completeMessage = messageBuilder.toString().trim();
+                                        Message outgoingMessage = new Message(srcIP, destinationIP, completeMessage);
 
-                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).equals("")) {
+                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).isEmpty()) {
                                             System.out.println("Entry not in ARP cache");
                                             System.out.println("Sending an ARP request through interface " + nextHopNdNextIface.get("nextIface"));
                                             System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
@@ -211,6 +215,7 @@ public class Station {
                         byte[] serializedFrame = s1.ethernetFrame.serialize();
                         ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
                         socket.write(frameBuffer);
+                        Thread.sleep(2000);
                     }
                     s1.pq.removePendingPacket(ethernetFrame.getSourceIP());
                 }
@@ -264,6 +269,8 @@ public class Station {
             socketKey.cancel();
             quit(socket);
         } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }

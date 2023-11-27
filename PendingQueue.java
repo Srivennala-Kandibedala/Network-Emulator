@@ -30,12 +30,12 @@ class PendingQueue implements Serializable {
 
 
     public void printPendingQueue() {
+        System.out.println("IP Address\t\t  Message");
         for (Map.Entry<String, List<Message>> entry : this.pendingPackets.entrySet()) {
             String key = entry.getKey();
             List<Message> value = entry.getValue();
 
-            System.out.println("Key: " + key);
-            System.out.print("Value:");
+            System.out.print(key+"\t\t");
 
             for (Message obj : value) {
                 System.out.print("  " + obj.getMessage());

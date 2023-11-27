@@ -63,19 +63,19 @@ class Arp implements Serializable {
             return mac;
         } else {
             System.out.println("Mac not found for " + destIP);
-            return ""; // or any default value you want to return
+            return "";
         }
     }
 
     static void printArpCache() {
+        System.out.println("|Destination IP\t|\tDestination Mac\t|\tTime To Live|");
         for (Map.Entry<String, Map<String, Object>> entry : arpCache.entrySet()) {
             String destIP = entry.getKey();
             Map<String, Object> entryDetails = entry.getValue();
 
             String destMac = entryDetails.get("destMac").toString();
             int ttl = (int) entryDetails.get("ttl");
-
-            System.out.println("Destination IP: " + destIP + ", Destination Mac: " + destMac + ", TTL: " + ttl);
+            System.out.printf("|%s\t|\t%s\t|\t%d|%n", destIP, destMac, ttl);
         }
         System.out.println("End of Arp Cache Table");
     }

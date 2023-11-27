@@ -105,7 +105,7 @@ public class Bridge {
                     try {
                         List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                         if (!userInputVector.isEmpty()) {
-                            System.out.println("userINput: " + userInputVector);
+                            System.out.println("userInput: " + userInputVector);
 
                             if (userInputVector.get(0).equals("quit")) {
                                 ServerSocketChannel mainChannel = serverChannel;
