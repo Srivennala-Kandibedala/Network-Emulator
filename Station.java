@@ -76,7 +76,10 @@ public class Station {
                     List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                     if (!userInputVector.isEmpty()) {
                         String firstElement = userInputVector.get(0);
-                        if (firstElement.equals("show")) {
+                        if (firstElement.equals("quit")) {
+                            System.exit(0);
+                        }
+                        else if (firstElement.equals("show")) {
                             String secondElement = userInputVector.get(1);
                             if (secondElement.equals("host")) {
                                 Map<String, Vector<String>> hosts = loadAndPrintHosts(("hosts"));
@@ -103,14 +106,11 @@ public class Station {
                                         Vector<String> nextIface = socketFdToIfaceName.get(next_fd);
                                         String srcIP = nextIface.get(1);
                                         String srcMac = nextIface.get(3);
-                                        StringBuilder messageBuilder = new StringBuilder();
-                                        for (int i = 2; i < userInputVector.size(); i++) {
-                                            messageBuilder.append(userInputVector.get(i)).append(" ");
-                                        }
-                                        String completeMessage = messageBuilder.toString().trim();
-                                        Message outgoingMessage = new Message(srcIP, destinationIP, completeMessage);
+//                                        System.out.println("check ip"+srcIP+nextHopNdNextIface.get("nextHop"));
 
-                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).isEmpty()) {
+                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
+
+                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).equals("")) {
                                             System.out.println("Entry not in ARP cache");
                                             System.out.println("Sending an ARP request through interface " + nextHopNdNextIface.get("nextIface"));
                                             System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
@@ -175,7 +175,7 @@ public class Station {
     private static void handleStation(Station s1, SelectionKey socketKey) throws ClassNotFoundException {
         SocketChannel socket = (SocketChannel) socketKey.channel();
         Vector<String> interFace = socketFdToIfaceName.get(socket);
-//        System.out.println("****" + interFace);
+        System.out.println("\nSTATION: " + interFace.get(0) + ">");
         try {
             ByteBuffer bytes = ByteBuffer.allocate(4096);
             int bytesRead = socket.read(bytes);
@@ -188,7 +188,7 @@ public class Station {
             bytes.flip();
             System.out.println("Received ethernet frame ");
             EthernetFrame ethernetFrame = EthernetFrame.deserialize(bytes);
-            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
+//            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
             if (ethernetFrame.getType().equals("ARP_REQUEST")) {
                 System.out.println("Received arp request ");
                 if (ethernetFrame.getDestinationIP().equals(interFace.get(1))) {
@@ -220,7 +220,7 @@ public class Station {
                     s1.pq.removePendingPacket(ethernetFrame.getSourceIP());
                 }
             } else if (ethernetFrame.getType().equals("DATAFRAME")) {
-                System.out.println("Received dataframe to "+ethernetFrame.getDestinationMac() + " . My Mac is "+ interFace.get(3));
+                System.out.println("Received dataframe to "+ethernetFrame.getDestinationMac() + ", My Mac is "+ interFace.get(3));
                 if (Objects.equals(ethernetFrame.getDestinationMac(), interFace.get(3))) {
                     Message packet = ethernetFrame.getPacket();
                     if (ethernetFrame.getDestinationIP().equals(interFace.get(1)) && !s1.comp_name.equals("-route")) {
@@ -239,7 +239,7 @@ public class Station {
                             System.out.println("Entry not in ARP cache \nSending an ARP request from interface " + interFace.get(0));
                             System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
                             s1.pq.addPendingPacket(nextHopNdNextIface.get("nextHop"), packet);
-                            s1.ethernetFrame.createArp("ARP_REQUEST", nextIface.get(1), nextHopNdNextIface.get("nextHop"), nextIface.get(3), "FF:FF:FF:FF");
+                            s1.ethernetFrame.createArp("ARP_REQUEST", nextIface.get(1), nextHopNdNextIface.get("nextHop"), nextIface.get(3), "FF:FF:FF:FF:FF:FF");
                             byte[] serializedFrame = s1.ethernetFrame.serialize();
                             ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
                             nextFd.write(frameBuffer);

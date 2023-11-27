@@ -66,4 +66,20 @@ class SlTable implements Serializable {
         System.out.println(slCache.toString());
     }
 
+    public void remove(SocketChannel fd) {
+        Iterator<Map.Entry<String, List<Object>>> iterator = slCache.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            Map.Entry<String, List<Object>> entry = iterator.next();
+            List<Object> values = entry.getValue();
+
+            // Check if the first element of the entry is the given SocketChannel
+            if (values.get(0) == fd) {
+                // Remove the entry if found
+                iterator.remove();
+//                System.out.println("Entry removed for SocketChannel: " + fd);
+                return;
+            }
+        }
+    }
 }
