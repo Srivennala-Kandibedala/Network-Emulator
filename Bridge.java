@@ -153,6 +153,8 @@ public class Bridge {
                             } catch (ClassNotFoundException e) {
                                 e.printStackTrace();
                             }
+                        } else{
+                            System.out.println("here");
                         }
                     });
                     selector.selectedKeys().clear();
@@ -173,6 +175,7 @@ public class Bridge {
             if (read < 0) {
                 System.out.println("Disconnected from: " + client.getRemoteAddress().toString().split("/")[1]);
                 activeClients.remove(client);
+                bridge.sl.remove(client);
                 client.close();
                 socket.cancel();
                 return;

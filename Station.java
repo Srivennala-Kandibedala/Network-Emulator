@@ -215,6 +215,7 @@ public class Station {
                         byte[] serializedFrame = s1.ethernetFrame.serialize();
                         ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
                         socket.write(frameBuffer);
+                        Thread.sleep(2000);
                     }
                     s1.pq.removePendingPacket(ethernetFrame.getSourceIP());
                 }
@@ -268,6 +269,8 @@ public class Station {
             socketKey.cancel();
             quit(socket);
         } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
