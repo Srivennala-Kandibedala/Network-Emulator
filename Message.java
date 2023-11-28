@@ -5,29 +5,10 @@ class Message implements Serializable {
     private String destinationIP;
     private String message;
 
-    public void setSourceIP(String sourceIP) {
-        this.sourceIP = sourceIP;
-    }
-
-    public void setDestinationIP(String destinationIP) {
-        this.destinationIP = destinationIP;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
     public Message(String sourceIP, String destinationIP, String message) {
         this.sourceIP = sourceIP;
         this.destinationIP = destinationIP;
         this.message = message;
-    }
-
-    public byte[] serialize() throws IOException {
-        try (ByteArrayOutputStream bos = new ByteArrayOutputStream(); ObjectOutputStream out = new ObjectOutputStream(bos)) {
-            out.writeObject(this);
-            return bos.toByteArray();
-        }
     }
 
     // Static method to deserialize a byte array into a Message object
@@ -37,15 +18,34 @@ class Message implements Serializable {
         }
     }
 
+    public byte[] serialize() throws IOException {
+        try (ByteArrayOutputStream bos = new ByteArrayOutputStream(); ObjectOutputStream out = new ObjectOutputStream(bos)) {
+            out.writeObject(this);
+            return bos.toByteArray();
+        }
+    }
+
     public String getMessage() {
         return this.message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 
     public String getSourceIP() {
         return this.sourceIP;
     }
 
+    public void setSourceIP(String sourceIP) {
+        this.sourceIP = sourceIP;
+    }
+
     public String getDestinationIP() {
         return this.destinationIP;
+    }
+
+    public void setDestinationIP(String destinationIP) {
+        this.destinationIP = destinationIP;
     }
 }

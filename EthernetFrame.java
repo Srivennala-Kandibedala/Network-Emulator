@@ -2,12 +2,24 @@ import java.io.*;
 import java.nio.ByteBuffer;
 
 public class EthernetFrame implements Serializable {
-    private  String type;
+    private String type;
     private Message packet;
     private String sourceIP;
     private String destinationIP;
     private String sourceMac;
     private String destinationMac;
+
+    public EthernetFrame() {
+
+    }
+
+    // Static method to deserialize a byte array into a Message object
+    public static EthernetFrame deserialize(ByteBuffer bytes) throws IOException, ClassNotFoundException {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes.array());
+             ObjectInput in = new ObjectInputStream(bis)) {
+            return (EthernetFrame) in.readObject();
+        }
+    }
 
     public String getType() {
         return type;
@@ -74,23 +86,11 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
-    public EthernetFrame() {
-
-    }
-
     public byte[] serialize() throws IOException {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream out = new ObjectOutputStream(bos)) {
             out.writeObject(this);
             return bos.toByteArray();
-        }
-    }
-
-    // Static method to deserialize a byte array into a Message object
-    public static EthernetFrame deserialize(ByteBuffer bytes) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes.array());
-             ObjectInput in = new ObjectInputStream(bis)) {
-            return (EthernetFrame) in.readObject();
         }
     }
 

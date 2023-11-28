@@ -19,7 +19,7 @@ class PendingQueue implements Serializable {
     }
 
     public List<Message> getPendingPacket(String nextHopIP) {
-        System.out.println("pending queue nexthop "+ nextHopIP);
+        System.out.println("pending queue nexthop " + nextHopIP);
 //        System.out.println(this.pendingPackets.get(nextHopIP));
         return this.pendingPackets.get(nextHopIP);
     }
@@ -35,7 +35,7 @@ class PendingQueue implements Serializable {
             String key = entry.getKey();
             List<Message> value = entry.getValue();
 
-            System.out.print(key+"\t\t");
+            System.out.print(key + "\t\t");
 
             for (Message obj : value) {
                 System.out.print("  " + obj.getMessage());

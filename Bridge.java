@@ -1,13 +1,7 @@
 //import sun.misc.Signal;
 //import sun.misc.SignalHandler;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -15,36 +9,33 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Scanner;
 
 public class Bridge {
-    String lan_name;
-    static int num_ports;
-
-    private SlTable sl;
-
     private static final Scanner scanner = new Scanner(System.in);
+    //    private static final Signal SIGNAL = new Signal("INT");
+    public static List<SocketChannel> activeClients = new ArrayList<>();
+    static int num_ports;
     private static Thread receivingThread;
+    private static ServerSocketChannel serverChannel;
+    private static Selector selector;
+    private static boolean serverRunning = true;
 
+//    public static List<SocketChannel> activeClients = Collections.synchronizedList(nrmlList);
+    String lan_name;
+    private SlTable sl;
     public Bridge(String l_name, String n_ports) {
         lan_name = l_name;
         num_ports = Integer.parseInt(n_ports);
         this.sl = new SlTable();
         this.sl.myTimer();
     }
-
-    //    private static final Signal SIGNAL = new Signal("INT");
-    public static List<SocketChannel> activeClients = new ArrayList<>();
-
-//    public static List<SocketChannel> activeClients = Collections.synchronizedList(nrmlList);
-
-    private static ServerSocketChannel serverChannel;
-    private static Selector selector;
-    private static boolean serverRunning = true;
 //    private static final SignalHandler signalHandler = signal -> {
 //        try {
 //            serverRunning = false;
@@ -118,11 +109,9 @@ public class Bridge {
                                 }
                                 mainChannel.close();
                                 System.exit(0);
-                            }
-                            else if (userInputVector.get(0).equals("show") && userInputVector.get(1).equals("sl")) {
+                            } else if (userInputVector.get(0).equals("show") && userInputVector.get(1).equals("sl")) {
                                 b1.sl.printSl();
-                            }
-                            else{
+                            } else {
                                 System.out.println("Not a correct command");
                             }
                         }
@@ -157,7 +146,7 @@ public class Bridge {
                             } catch (ClassNotFoundException e) {
                                 e.printStackTrace();
                             }
-                        } else{
+                        } else {
                             System.out.println("here");
                         }
                     });
@@ -195,19 +184,19 @@ public class Bridge {
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
 //                if (Objects.equals(frame.getType(), "DATAFRAME")) {
-                    if (bridge.sl.isKey(frame.getDestinationMac())) {
-                        bridge.sl.resetTTl(frame.getDestinationMac());
-                        SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                        System.out.println("Forwarding frame....."+activeClients.indexOf(destFD));
-                        destFD.write(ByteBuffer.wrap(serialized));
-                    } else {
-                        System.out.println("Found no entry in SL table. Broadcasting frame.....");
-                        for (SocketChannel otherClient : activeClients) {
-                            if (client != otherClient) {
-                                otherClient.write(ByteBuffer.wrap(serialized));
-                            }
+                if (bridge.sl.isKey(frame.getDestinationMac())) {
+                    bridge.sl.resetTTl(frame.getDestinationMac());
+                    SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
+                    System.out.println("Forwarding frame....." + activeClients.indexOf(destFD));
+                    destFD.write(ByteBuffer.wrap(serialized));
+                } else {
+                    System.out.println("Found no entry in SL table. Broadcasting frame.....");
+                    for (SocketChannel otherClient : activeClients) {
+                        if (client != otherClient) {
+                            otherClient.write(ByteBuffer.wrap(serialized));
                         }
                     }
+                }
 //                }
 //                else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
 //                    if (bridge.sl.isKey(frame.getDestinationMac())) {

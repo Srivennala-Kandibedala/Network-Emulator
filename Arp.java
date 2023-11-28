@@ -1,31 +1,15 @@
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.*;
 
 class Arp implements Serializable {
     private static Map<String, Map<String, Object>> arpCache = new HashMap<>();
 
-    public void myTimer(){
-        Timer timer = new Timer();
-        TimerTask task = new TimerTask() {
-            @Override
-            public void run() {
-                updateTimer();
-            }
-        };
-        timer.scheduleAtFixedRate(task, 0, 1000);
-    }
-
-    static void resetTTl(String key){
-            Map<String, Object> entry = arpCache.get(key);
-            if (entry != null) {
-                entry.put("ttl", 60);
-                arpCache.put(key, entry);
-            }
+    static void resetTTl(String key) {
+        Map<String, Object> entry = arpCache.get(key);
+        if (entry != null) {
+            entry.put("ttl", 60);
+            arpCache.put(key, entry);
+        }
     }
 
     private static void updateTimer() {
@@ -46,6 +30,7 @@ class Arp implements Serializable {
             System.out.println("Entry with IP " + entryToRemove.getKey() + " has been removed.");
         }
     }
+
     static void addArpCache(String destIP, String destMac) {
         Map<String, Object> entry = new HashMap<>();
         entry.put("destMac", destMac);
@@ -55,7 +40,7 @@ class Arp implements Serializable {
 
     static String getMac(String destIP) {
         String mac = "";
-        if (arpCache.containsKey(destIP)){
+        if (arpCache.containsKey(destIP)) {
             mac = (String) arpCache.get(destIP).get("destMac");
         }
 
@@ -78,6 +63,17 @@ class Arp implements Serializable {
             System.out.printf("|%s\t|\t%s\t|\t%d|%n", destIP, destMac, ttl);
         }
         System.out.println("End of Arp Cache Table");
+    }
+
+    public void myTimer() {
+        Timer timer = new Timer();
+        TimerTask task = new TimerTask() {
+            @Override
+            public void run() {
+                updateTimer();
+            }
+        };
+        timer.scheduleAtFixedRate(task, 0, 1000);
     }
 }
 
