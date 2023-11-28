@@ -38,7 +38,10 @@ public class Station {
     }
 
     public static void main(String[] args) throws IOException {
-        // [potti] - implement args len validation for user cmd line args
+        if (args.length != 4) {
+            System.err.println("Usage: java Station <name> <i_face> <r_table> <h_table>");
+            System.exit(1); // Exit with an error code
+        }
         Station s1 = new Station(args[0], args[1], args[2], args[3]);
         s1.load_files();
         Selector selector;
@@ -88,9 +91,14 @@ public class Station {
                                         String srcMac = nextIface.get(3);
 //                                        System.out.println("check ip"+srcIP+nextHopNdNextIface.get("nextHop"));
 
-                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
-
-                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).equals("")) {
+//                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
+                                        StringBuilder messageBuilder = new StringBuilder();
+                                        for (int i = 2; i < userInputVector.size(); i++) {
+                                            messageBuilder.append(userInputVector.get(i)).append(" ");
+                                        }
+                                        String completeMessage = messageBuilder.toString().trim();
+                                        Message outgoingMessage = new Message(srcIP, destinationIP, completeMessage);
+                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).isEmpty()) {
                                             System.out.println("Entry not in ARP cache");
                                             System.out.println("Sending an ARP request through interface " + nextHopNdNextIface.get("nextIface"));
                                             System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
