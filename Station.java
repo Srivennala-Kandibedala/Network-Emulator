@@ -10,10 +10,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Station {
-    private static final Map<SocketChannel, Vector<String>> socketFdToIfaceName = new HashMap<>();
-    private static final Map<String, SocketChannel> ifaceNameTosocketFd = new HashMap<>();
+    private static final ConcurrentHashMap<SocketChannel, Vector<String>> socketFdToIfaceName = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, SocketChannel> ifaceNameTosocketFd = new ConcurrentHashMap<>();
     private static final Scanner scanner = new Scanner(System.in);
     public static List<SocketChannel> activeStations = new ArrayList<>();
     public static Vector<Vector<String>> ifaceData;
@@ -25,6 +26,7 @@ public class Station {
     private final Arp arpCache;
     private final EthernetFrame ethernetFrame;
     private final PendingQueue pq;
+    private static int tryCount = 5;
     String comp_name, iface, rtable, htable;
 
     public Station(String name, String i_face, String r_table, String h_table) {
@@ -45,26 +47,8 @@ public class Station {
         Selector selector;
         try {
             selector = Selector.open();
-            String ipAddress = "", portNumber = "";
-            for (Vector<String> line : ifaceData) {
-                Path addressLink = Paths.get("." + line.lastElement() + ".addr");
-                ipAddress = Files.readSymbolicLink(addressLink).toString();
-
-                Path portLink = Paths.get("." + line.lastElement() + ".port");
-                portNumber = Files.readSymbolicLink(portLink).toString();
-                SocketChannel socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
-
-                socket.configureBlocking(false);
-                socket.register(selector, SelectionKey.OP_READ);
-
-                activeStations.add(socket);
-                socketFdToIfaceName.put(socket, line);
-                ifaceNameTosocketFd.put(line.get(0), socket);
-
-//                Scanner scanner = new Scanner(System.in); need 2 inits?
-                System.out.println("Connected to the Chat Server at: " + socket.socket().getRemoteSocketAddress() + " through port " + socket.socket().getLocalPort());
-            }
-        } catch (IOException e) {
+            handleConnections(selector);
+        } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
 //        System.out.println("activeStations "+activeStations);
@@ -168,6 +152,51 @@ public class Station {
                     }
                 });
                 selector.selectedKeys().clear();
+            }
+        }
+    }
+
+    private static void handleConnections(Selector selector) throws IOException, InterruptedException {
+        List<String> successCon = new ArrayList<>();
+        while (successCon.size() != ifaceData.size() && tryCount-- > 0) {
+            System.out.println("trying " + (5 - tryCount) + " for connections");
+            for (Vector<String> line : ifaceData) {
+                if (!successCon.contains(line.firstElement())) {
+                    try {
+                        Path addressLink = Paths.get("." + line.lastElement() + ".addr");
+                        String ipAddress = Files.readSymbolicLink(addressLink).toString();
+
+                        Path portLink = Paths.get("." + line.lastElement() + ".port");
+                        String portNumber = Files.readSymbolicLink(portLink).toString();
+                        SocketChannel socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
+
+                        socket.configureBlocking(false);
+                        socket.register(selector, SelectionKey.OP_READ);
+
+                        activeStations.add(socket);
+                        socketFdToIfaceName.put(socket, line);
+                        ifaceNameTosocketFd.put(line.get(0), socket);
+                    } catch (IOException ignore) {}
+                }
+            }
+            Thread.sleep(2000);
+            selector.selectNow();
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+            for (SelectionKey key : selectionKeys) {
+                if (key.isReadable()) {
+                    ByteBuffer bytes = ByteBuffer.allocate(100);
+                    SocketChannel socketChannel = (SocketChannel) key.channel();
+                    if (socketChannel.read(bytes) > 0) {
+                        System.out.println("Connected to " + socketFdToIfaceName.get(socketChannel).lastElement());
+                        successCon.add(socketFdToIfaceName.get(socketChannel).firstElement());
+                    }
+                }
+            }
+            selectionKeys.clear();
+        }
+        for (Vector<String> line : ifaceData) {
+            if (!successCon.contains(line.firstElement())) {
+                System.out.println("Connection rejected by bridge " + line.lastElement());
             }
         }
     }
@@ -278,15 +307,7 @@ public class Station {
     private static Vector<Vector<String>> loadAndPrintIfaces(String ifaceFileName) {
         Vector<Vector<String>> ifaceData = new Vector<>();
         try {
-            File ifacePath = new File("ifaces");
-            File[] ifaceList = ifacePath.listFiles();
-            File matchingFile = null;
-            for (File ifaceFile : ifaceList) {
-                if (ifaceFile.getName().equals(ifaceFileName)) {
-                    matchingFile = ifaceFile;
-                    break;
-                }
-            }
+            File matchingFile = new File(ifaceFileName);
             System.out.println("reading iface... ");
             System.out.println();
             assert matchingFile != null;
@@ -313,15 +334,7 @@ public class Station {
     private static Vector<Vector<String>> loadAndPrintRtables(String rtableFileName) {
         Vector<Vector<String>> rtableData = new Vector<>();
         try {
-            File rtable = new File("rtables");
-            File[] rtableList = rtable.listFiles();
-            File matchingFile = null;
-            for (File rtableFile : rtableList) {
-                if (rtableFile.getName().equals(rtableFileName)) {
-                    matchingFile = rtableFile;
-                    break;
-                }
-            }
+            File matchingFile = new File(rtableFileName);
             System.out.println();
             System.out.println("reading rtable...");
             System.out.println();

@@ -23,7 +23,7 @@ import java.util.*;
 
 public class Bridge {
     String lan_name;
-    String num_ports;
+    static int num_ports;
 
     private SlTable sl;
 
@@ -32,7 +32,7 @@ public class Bridge {
 
     public Bridge(String l_name, String n_ports) {
         lan_name = l_name;
-        num_ports = n_ports;
+        num_ports = Integer.parseInt(n_ports);
         this.sl = new SlTable();
         this.sl.myTimer();
     }
@@ -137,15 +137,19 @@ public class Bridge {
                 if (serverRunning) {
                     selector.selectedKeys().forEach((socket) -> {
                         if (socket.isAcceptable()) {
-                            try {
-                                ServerSocketChannel server = (ServerSocketChannel) socket.channel();
-                                SocketChannel client = server.accept();
-                                client.configureBlocking(false);
-                                client.register(selector, SelectionKey.OP_READ);
-                                activeClients.add(client);
-                                System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
-                            } catch (IOException e) {
-                                System.out.println("Cannot accept connection");
+                            if (num_ports > 0) {
+                                try {
+                                    ServerSocketChannel server = (ServerSocketChannel) socket.channel();
+                                    SocketChannel client = server.accept();
+                                    client.configureBlocking(false);
+                                    client.register(selector, SelectionKey.OP_READ);
+                                    activeClients.add(client);
+                                    client.write(ByteBuffer.wrap("accept".getBytes()));
+                                    num_ports--;
+                                    System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
+                                } catch (IOException e) {
+                                    System.out.println("Cannot accept connection");
+                                }
                             }
                         } else if (socket.isReadable()) {
                             try {
@@ -178,6 +182,7 @@ public class Bridge {
                 bridge.sl.remove(client);
                 client.close();
                 socket.cancel();
+                num_ports++;
                 return;
             }
 
