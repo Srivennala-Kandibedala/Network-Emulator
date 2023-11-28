@@ -1,8 +1,9 @@
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 class Arp implements Serializable {
-    private static Map<String, Map<String, Object>> arpCache = new HashMap<>();
+    private static ConcurrentHashMap<String, Map<String, Object>> arpCache = new ConcurrentHashMap<>();
 
     static void resetTTl(String key) {
         Map<String, Object> entry = arpCache.get(key);

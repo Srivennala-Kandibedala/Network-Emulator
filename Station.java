@@ -24,7 +24,6 @@ public class Station {
     private static Thread receivingThread;
     private static Selector selector;
     private static int tryCount = 5;
-    private final Arp arpCache;
     private final EthernetFrame ethernetFrame;
     private final PendingQueue pq;
     String comp_name, iface, rtable, htable;
@@ -34,8 +33,6 @@ public class Station {
         iface = i_face;
         rtable = r_table;
         htable = h_table;
-        arpCache = new Arp();
-        arpCache.myTimer();
         pq = new PendingQueue();
         ethernetFrame = new EthernetFrame();
     }
@@ -218,11 +215,13 @@ public class Station {
             System.out.println("Received ethernet frame ");
             EthernetFrame ethernetFrame = EthernetFrame.deserialize(bytes);
 //            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
+            Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
             if (ethernetFrame.getType().equals("ARP_REQUEST")) {
                 System.out.println("Received arp request ");
                 if (ethernetFrame.getDestinationIP().equals(interFace.get(1))) {
                     System.out.println("The ARP request is for me!");
                     System.out.println("Sending back ARP response");
+
                     s1.ethernetFrame.createArp("ARP_RESPONSE", ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), interFace.get(3), ethernetFrame.getSourceMac());
                     byte[] serializedFrame = s1.ethernetFrame.serialize();
                     ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
@@ -234,7 +233,7 @@ public class Station {
                 System.out.println("Received an arp response " + ethernetFrame.getDestinationMac() + interFace.get(3));
                 if (ethernetFrame.getDestinationMac().equals(interFace.get(3))) {
                     System.out.println("The ARP response is for me!");
-                    Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
+//                    Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
                     List<Message> packets = s1.pq.getPendingPacket(ethernetFrame.getSourceIP());
                     for (Message packet : packets) {
                         System.out.println("Sending dataframe to destination " + ethernetFrame.getDestinationMac());

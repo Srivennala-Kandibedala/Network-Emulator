@@ -1,14 +1,15 @@
 import java.io.Serializable;
 import java.nio.channels.SocketChannel;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 class SlTable implements Serializable {
 
     private static final int DEFAULT_TTL = 60;
-    private static Map<String, List<Object>> slCache;
+    private static ConcurrentHashMap<String, List<Object>> slCache;
 
     public SlTable() {
-        this.slCache = new HashMap<>();
+        this.slCache = new ConcurrentHashMap<>();
     }
 
     private static void updateSlTimer() {
