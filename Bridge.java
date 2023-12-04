@@ -92,11 +92,13 @@ public class Bridge {
 
             receivingThread = new Thread(() -> {
                 String userInput;
+                System.out.println("BRIDGE>");
                 while ((userInput = scanner.nextLine()) != null) {
                     try {
+                        System.out.println("BRIDGE>");
                         List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                         if (!userInputVector.isEmpty()) {
-                            System.out.println("userInput: " + userInputVector);
+//                            System.out.println("userInput: " + userInputVector);
 
                             if (userInputVector.get(0).equals("quit")) {
                                 ServerSocketChannel mainChannel = serverChannel;
@@ -126,7 +128,7 @@ public class Bridge {
                 if (serverRunning) {
                     selector.selectedKeys().forEach((socket) -> {
                         if (socket.isAcceptable()) {
-                            if (num_ports > 0) {
+                            if (num_ports > 0) { // Add max num_ports and bridge name should be unique, accept and reject conditions
                                 try {
                                     ServerSocketChannel server = (ServerSocketChannel) socket.channel();
                                     SocketChannel client = server.accept();

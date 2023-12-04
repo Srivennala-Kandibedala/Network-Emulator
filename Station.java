@@ -35,6 +35,7 @@ public class Station {
         htable = h_table;
         pq = new PendingQueue();
         ethernetFrame = new EthernetFrame();
+        Arp.myTimer();
     }
 
     public static void main(String[] args) throws IOException {
@@ -55,8 +56,18 @@ public class Station {
         receivingThread = new Thread(() -> {
             System.out.println("You can start chatting now. Press CTRL + C to quit.");
             String userInput;
+            if(Objects.equals(s1.comp_name, "-no")){
+                System.out.println("STATION>");
+            }else{
+                System.out.println("ROUTER>");
+            }
             while ((userInput = scanner.nextLine()) != null) {
                 try {
+                    if(Objects.equals(s1.comp_name, "-no")){
+                        System.out.println("STATION>");
+                    }else{
+                        System.out.println("ROUTER>");
+                    }
                     List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                     if (!userInputVector.isEmpty()) {
                         String firstElement = userInputVector.get(0);
@@ -192,7 +203,7 @@ public class Station {
                     ByteBuffer bytes = ByteBuffer.allocate(100);
                     SocketChannel socketChannel = (SocketChannel) key.channel();
                     if (socketChannel.read(bytes) > 0) {
-                        System.out.println("Connected to " + socketFdToIfaceName.get(socketChannel).lastElement());
+                        System.out.println("Accept\nConnected to " + socketFdToIfaceName.get(socketChannel).lastElement());
                         successCon.add(socketFdToIfaceName.get(socketChannel).firstElement());
                     }
                 }
@@ -201,7 +212,7 @@ public class Station {
         }
         for (Vector<String> line : ifaceData) {
             if (!successCon.contains(line.firstElement())) {
-                System.out.println("Connection rejected by bridge " + line.lastElement());
+                System.out.println("Reject\nConnection rejected by bridge " + line.lastElement());
             }
         }
     }
@@ -209,7 +220,12 @@ public class Station {
     private static void handleStation(Station s1, SelectionKey socketKey) throws ClassNotFoundException {
         SocketChannel socket = (SocketChannel) socketKey.channel();
         Vector<String> interFace = socketFdToIfaceName.get(socket);
-        System.out.println("\nSTATION: " + interFace.get(0) + ">");
+        if(Objects.equals(s1.comp_name, "-no")){
+            System.out.println("\nSTATION: " + interFace.get(0) + ">");
+        }else{
+            System.out.println("\nROUTER: " + interFace.get(0) + ">");
+        }
+
         try {
             ByteBuffer bytes = ByteBuffer.allocate(4096);
             int bytesRead = socket.read(bytes);
@@ -238,14 +254,14 @@ public class Station {
                     System.out.println("Not mine. My mac is " + interFace.get(3));
                 }
             } else if (ethernetFrame.getType().equals("ARP_RESPONSE")) {
-                System.out.println("Received an arp response " + ethernetFrame.getDestinationMac() + interFace.get(3));
+                System.out.println("Received an arp response to " +ethernetFrame.getDestinationMac() + " My MAC Address is: "+interFace.get(3));
                 if (ethernetFrame.getDestinationMac().equals(interFace.get(3))) {
                     System.out.println("The ARP response is for me!");
 //                    Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
                     List<Message> packets = s1.pq.getPendingPacket(ethernetFrame.getSourceIP());
                     for (Message packet : packets) {
                         System.out.println("Sending dataframe to destination " + ethernetFrame.getDestinationMac());
-                        System.out.println("Packet details " + packet.getMessage() + packet.getSourceIP() + packet.getDestinationIP()); // [potti]
+                        System.out.println("Packet details \n Message: " + packet.getMessage() + "\n Source IP: "+packet.getSourceIP() +"\n Destination IP: "+ packet.getDestinationIP());
 //                        System.out.println("===> "+ ethernetFrame.getDestinationMac());
                         s1.ethernetFrame.createDF("DATAFRAME", packet, ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), ethernetFrame.getDestinationMac(), ethernetFrame.getSourceMac());
                         byte[] serializedFrame = s1.ethernetFrame.serialize();
@@ -309,6 +325,7 @@ public class Station {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+        System.out.println("STATION>");
     }
 
     private static Vector<Vector<String>> loadAndPrintIfaces(String ifaceFileName) {

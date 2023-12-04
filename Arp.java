@@ -66,7 +66,7 @@ class Arp implements Serializable {
         System.out.println("End of Arp Cache Table");
     }
 
-    public void myTimer() {
+    static void myTimer() {
         Timer timer = new Timer();
         TimerTask task = new TimerTask() {
             @Override

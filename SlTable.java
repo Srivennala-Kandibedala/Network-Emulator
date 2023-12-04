@@ -64,7 +64,14 @@ class SlTable implements Serializable {
     }
 
     public void printSl() {
-        System.out.println(slCache.toString());
+        System.out.println("MAC Address\t\t| Port\t| TTL");
+        for (Map.Entry<String, List<Object>> entry : slCache.entrySet()) {
+            String macAddress = entry.getKey();
+            int port = (int) entry.getValue().get(1);
+            int ttl = (int) entry.getValue().get(2);
+
+            System.out.printf("%s\t| %d\t| %d%n", macAddress, port, ttl);
+        }
     }
 
     public void remove(SocketChannel fd) {
