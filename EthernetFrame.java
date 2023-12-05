@@ -69,6 +69,7 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
+    // Creates an ARP (Address Resolution Protocol) Ethernet frame with the provided details.
     public void createArp(String type, String sourceIP, String destinationIP, String sourceMac, String destinationMac) {
         this.type = type;
         this.sourceIP = sourceIP;
@@ -77,6 +78,7 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
+    // Creates a DataFrame Ethernet frame with the provided details.
     public void createDF(String type, Message packet, String sourceIP, String destinationIP, String sourceMac, String destinationMac) {
         this.type = type;
         this.packet = packet;
@@ -86,6 +88,7 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
+    // Serializes the EthernetFrame object into a byte array.
     public byte[] serialize() throws IOException {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream out = new ObjectOutputStream(bos)) {

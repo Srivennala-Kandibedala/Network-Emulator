@@ -3,8 +3,11 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 class Arp implements Serializable {
+
+    // ConcurrentHashMap to store ARP cache entries with destination IP as key
     private static ConcurrentHashMap<String, Map<String, Object>> arpCache = new ConcurrentHashMap<>();
 
+    // Resets the Time To Live (TTL) for a given key in the ARP cache.
     static void resetTTl(String key) {
         Map<String, Object> entry = arpCache.get(key);
         if (entry != null) {
@@ -13,6 +16,7 @@ class Arp implements Serializable {
         }
     }
 
+    // Updates the TTL for each entry in the ARP cache and removes expired entries.
     private static void updateTimer() {
         List<Map.Entry<String, Map<String, Object>>> entriesToRemove = new ArrayList<>();
 
@@ -26,12 +30,14 @@ class Arp implements Serializable {
             }
         }
 
+        // Remove expired entries
         for (Map.Entry<String, Map<String, Object>> entryToRemove : entriesToRemove) {
             arpCache.remove(entryToRemove.getKey());
             System.out.println("Entry with IP " + entryToRemove.getKey() + " has been removed.");
         }
     }
 
+    // Adds a new entry to the ARP cache with the specified destination IP and MAC address.
     static void addArpCache(String destIP, String destMac) {
         Map<String, Object> entry = new HashMap<>();
         entry.put("destMac", destMac);
@@ -39,6 +45,7 @@ class Arp implements Serializable {
         arpCache.put(destIP, entry);
     }
 
+    // Retrieves the MAC address associated with the specified destination IP from the ARP cache.
     static String getMac(String destIP) {
         String mac = "";
         if (arpCache.containsKey(destIP)) {
@@ -53,6 +60,7 @@ class Arp implements Serializable {
         }
     }
 
+    // Prints the contents of the ARP cache in a tabular format.
     static void printArpCache() {
         System.out.println("|Destination IP\t|\tDestination Mac\t|\tTime To Live|");
         for (Map.Entry<String, Map<String, Object>> entry : arpCache.entrySet()) {
@@ -66,6 +74,7 @@ class Arp implements Serializable {
         System.out.println("End of Arp Cache Table");
     }
 
+    // Starts a timer to periodically update the TTL values and remove expired entries from the ARP cache.
     static void myTimer() {
         Timer timer = new Timer();
         TimerTask task = new TimerTask() {

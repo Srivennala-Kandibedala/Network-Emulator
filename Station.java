@@ -13,8 +13,10 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Station {
+    // ConcurrentHashMaps to manage socket channel and interface name mappings
     private static final ConcurrentHashMap<SocketChannel, Vector<String>> socketFdToIfaceName = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, SocketChannel> ifaceNameTosocketFd = new ConcurrentHashMap<>();
+
     private static final Scanner scanner = new Scanner(System.in);
     public static List<SocketChannel> activeStations = new ArrayList<>();
     public static Vector<Vector<String>> ifaceData;
@@ -28,6 +30,7 @@ public class Station {
     private final PendingQueue pq;
     String comp_name, iface, rtable, htable;
 
+    // Constructor to initialize station properties
     public Station(String name, String i_face, String r_table, String h_table) {
         comp_name = name;
         iface = i_face;
@@ -44,7 +47,9 @@ public class Station {
             System.exit(1); // Exit with an error code
         }
         Station s1 = new Station(args[0], args[1], args[2], args[3]);
-        s1.load_files();
+        s1.load_files(); // Load configuration files
+
+        // Initialize selector and handle connections
         Selector selector;
         try {
             selector = Selector.open();
@@ -52,7 +57,8 @@ public class Station {
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
-//        System.out.println("activeStations "+activeStations);
+
+        // Create and start the receiving thread for user input
         receivingThread = new Thread(() -> {
             System.out.println("You can start chatting now. Press CTRL + C to quit.");
             String userInput;
@@ -86,8 +92,7 @@ public class Station {
                             } else if (secondElement.equals("arp")) {
                                 Arp.printArpCache();
                             }
-                        } else if (firstElement.equals("send")) {
-                            // [potti] no option for router to send msg
+                        } else if (firstElement.equals("send") && s1.comp_name.equals("-no")) {
                             if (userInputVector.size() >= 3) {
                                 String destinationStation = userInputVector.get(1);
                                 if (hostData.containsKey(destinationStation)) {
@@ -100,9 +105,7 @@ public class Station {
                                         Vector<String> nextIface = socketFdToIfaceName.get(next_fd);
                                         String srcIP = nextIface.get(1);
                                         String srcMac = nextIface.get(3);
-//                                        System.out.println("check ip"+srcIP+nextHopNdNextIface.get("nextHop"));
 
-//                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
                                         StringBuilder messageBuilder = new StringBuilder();
                                         for (int i = 2; i < userInputVector.size(); i++) {
                                             messageBuilder.append(userInputVector.get(i)).append(" ");
@@ -120,7 +123,6 @@ public class Station {
                                             next_fd.write(frameBuffer);
                                         } else {
                                             System.out.println("Entry in ARP table \nSending ethernet frame to next hop");
-                                            // needs to update arp timer
                                             Arp.resetTTl(nextHopNdNextIface.get("nextHop"));
                                             System.out.println("******IPPacket details*****");
                                             System.out.println("Message: " + outgoingMessage.getMessage());
@@ -152,13 +154,14 @@ public class Station {
             }
         });
         receivingThread.start();
-
+        // Continuously handle selected keys
         while (true) {
             selector.select();
             if (true) {
                 selector.selectedKeys().forEach((socket) -> {
                     if (socket.isReadable()) {
                         try {
+                            // Handle incoming data from stations
                             handleStation(s1, socket);
                         } catch (ClassNotFoundException e) {
                             e.printStackTrace();
@@ -217,6 +220,7 @@ public class Station {
         }
     }
 
+    // Method to handle incoming data from stations
     private static void handleStation(Station s1, SelectionKey socketKey) throws ClassNotFoundException {
         SocketChannel socket = (SocketChannel) socketKey.channel();
         Vector<String> interFace = socketFdToIfaceName.get(socket);
@@ -328,6 +332,7 @@ public class Station {
         System.out.println("STATION>");
     }
 
+    // Method to load and print interface data from a file
     private static Vector<Vector<String>> loadAndPrintIfaces(String ifaceFileName) {
         Vector<Vector<String>> ifaceData = new Vector<>();
         try {
@@ -355,6 +360,7 @@ public class Station {
         return ifaceData;
     }
 
+    // Method to load and print routing table data from a file
     private static Vector<Vector<String>> loadAndPrintRtables(String rtableFileName) {
         Vector<Vector<String>> rtableData = new Vector<>();
         try {
@@ -382,6 +388,7 @@ public class Station {
         return rtableData;
     }
 
+    // Method to load and print host data from a file
     private static Map<String, Vector<String>> loadAndPrintHosts(String fileName) {
         Map<String, Vector<String>> hostData = new HashMap<>();
         try {
@@ -404,6 +411,7 @@ public class Station {
         return hostData;
     }
 
+    // Method to quit the station
     public static void quit(SocketChannel socket) {
         System.out.println("in quit");
         try {
@@ -416,6 +424,7 @@ public class Station {
         System.exit(0);
     }
 
+    // Method to find the next hop in the routing table
     private Map<String, String> findNextHop(String destinationIP, Vector<Vector<String>> rtable, Vector<Vector<String>> iface) {
         Map<String, String> hopAndIface = new HashMap<>();
         for (Vector<String> line : rtable) {
@@ -461,6 +470,7 @@ public class Station {
         return null;
     }
 
+    // Method to load configuration files and initialize the station
     public void load_files() {
         System.out.println();
         System.out.println("initializing..");
