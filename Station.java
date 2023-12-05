@@ -92,8 +92,8 @@ public class Station {
                             } else if (secondElement.equals("arp")) {
                                 Arp.printArpCache();
                             }
-                        } else if (firstElement.equals("send")) {
-                            // [potti] no option for router to send msg
+                        }
+                        else if (firstElement.equals("send") && s1.comp_name.equals("-no")) {
                             if (userInputVector.size() >= 3) {
                                 String destinationStation = userInputVector.get(1);
                                 if (hostData.containsKey(destinationStation)) {
@@ -106,9 +106,7 @@ public class Station {
                                         Vector<String> nextIface = socketFdToIfaceName.get(next_fd);
                                         String srcIP = nextIface.get(1);
                                         String srcMac = nextIface.get(3);
-//                                        System.out.println("check ip"+srcIP+nextHopNdNextIface.get("nextHop"));
-
-                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2));
+                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2)); // IPpacket
 
                                         if (Arp.getMac(nextHopNdNextIface.get("nextHop")).equals("")) {
                                             System.out.println("Entry not in ARP cache");
@@ -121,7 +119,6 @@ public class Station {
                                             next_fd.write(frameBuffer);
                                         } else {
                                             System.out.println("Entry in ARP table \nSending ethernet frame to next hop");
-                                            // needs to update arp timer
                                             Arp.resetTTl(nextHopNdNextIface.get("nextHop"));
                                             System.out.println("******IPPacket details*****");
                                             System.out.println("Message: " + outgoingMessage.getMessage());
@@ -188,12 +185,14 @@ public class Station {
             bytes.flip();
             System.out.println("Received ethernet frame ");
             EthernetFrame ethernetFrame = EthernetFrame.deserialize(bytes);
-//            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
+            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
+//            Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
             if (ethernetFrame.getType().equals("ARP_REQUEST")) {
                 System.out.println("Received arp request ");
                 if (ethernetFrame.getDestinationIP().equals(interFace.get(1))) {
                     System.out.println("The ARP request is for me!");
                     System.out.println("Sending back ARP response");
+                    Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
                     s1.ethernetFrame.createArp("ARP_RESPONSE", ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), interFace.get(3), ethernetFrame.getSourceMac());
                     byte[] serializedFrame = s1.ethernetFrame.serialize();
                     ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
