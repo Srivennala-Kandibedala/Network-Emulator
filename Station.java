@@ -332,7 +332,6 @@ public class Station {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("STATION>");
     }
 
     // Method to load and print interface data from a file
