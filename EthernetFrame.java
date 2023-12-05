@@ -2,12 +2,24 @@ import java.io.*;
 import java.nio.ByteBuffer;
 
 public class EthernetFrame implements Serializable {
-    private  String type;
+    private String type;
     private Message packet;
     private String sourceIP;
     private String destinationIP;
     private String sourceMac;
     private String destinationMac;
+
+    public EthernetFrame() {
+
+    }
+
+    // Static method to deserialize a byte array into a Message object
+    public static EthernetFrame deserialize(ByteBuffer bytes) throws IOException, ClassNotFoundException {
+        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes.array());
+             ObjectInput in = new ObjectInputStream(bis)) {
+            return (EthernetFrame) in.readObject();
+        }
+    }
 
     public String getType() {
         return type;
@@ -57,6 +69,7 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
+    // Creates an ARP (Address Resolution Protocol) Ethernet frame with the provided details.
     public void createArp(String type, String sourceIP, String destinationIP, String sourceMac, String destinationMac) {
         this.type = type;
         this.sourceIP = sourceIP;
@@ -65,6 +78,7 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
+    // Creates a DataFrame Ethernet frame with the provided details.
     public void createDF(String type, Message packet, String sourceIP, String destinationIP, String sourceMac, String destinationMac) {
         this.type = type;
         this.packet = packet;
@@ -74,23 +88,12 @@ public class EthernetFrame implements Serializable {
         this.destinationMac = destinationMac;
     }
 
-    public EthernetFrame() {
-
-    }
-
+    // Serializes the EthernetFrame object into a byte array.
     public byte[] serialize() throws IOException {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream out = new ObjectOutputStream(bos)) {
             out.writeObject(this);
             return bos.toByteArray();
-        }
-    }
-
-    // Static method to deserialize a byte array into a Message object
-    public static EthernetFrame deserialize(ByteBuffer bytes) throws IOException, ClassNotFoundException {
-        try (ByteArrayInputStream bis = new ByteArrayInputStream(bytes.array());
-             ObjectInput in = new ObjectInputStream(bis)) {
-            return (EthernetFrame) in.readObject();
         }
     }
 

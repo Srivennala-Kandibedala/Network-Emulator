@@ -10,10 +10,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Station {
-    private static final Map<SocketChannel, Vector<String>> socketFdToIfaceName = new HashMap<>();
-    private static final Map<String, SocketChannel> ifaceNameTosocketFd = new HashMap<>();
+    // ConcurrentHashMaps to manage socket channel and interface name mappings
+    private static final ConcurrentHashMap<SocketChannel, Vector<String>> socketFdToIfaceName = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, SocketChannel> ifaceNameTosocketFd = new ConcurrentHashMap<>();
+
     private static final Scanner scanner = new Scanner(System.in);
     public static List<SocketChannel> activeStations = new ArrayList<>();
     public static Vector<Vector<String>> ifaceData;
@@ -22,64 +25,61 @@ public class Station {
     private static String ifaceName;
     private static Thread receivingThread;
     private static Selector selector;
-    private final Arp arpCache;
+    private static int tryCount = 5;
     private final EthernetFrame ethernetFrame;
     private final PendingQueue pq;
     String comp_name, iface, rtable, htable;
 
+    // Constructor to initialize station properties
     public Station(String name, String i_face, String r_table, String h_table) {
         comp_name = name;
         iface = i_face;
         rtable = r_table;
         htable = h_table;
-        arpCache = new Arp();
-        arpCache.myTimer();
         pq = new PendingQueue();
         ethernetFrame = new EthernetFrame();
+        Arp.myTimer();
     }
 
     public static void main(String[] args) throws IOException {
-        // [potti] - implement args len validation for user cmd line args
+        if (args.length != 4) {
+            System.err.println("Usage: java Station <name> <i_face> <r_table> <h_table>");
+            System.exit(1); // Exit with an error code
+        }
         Station s1 = new Station(args[0], args[1], args[2], args[3]);
-        s1.load_files();
+        s1.load_files(); // Load configuration files
+
+        // Initialize selector and handle connections
         Selector selector;
         try {
             selector = Selector.open();
-            String ipAddress = "", portNumber = "";
-            for (Vector<String> line : ifaceData) {
-                Path addressLink = Paths.get("." + line.lastElement() + ".addr");
-                ipAddress = Files.readSymbolicLink(addressLink).toString();
-
-                Path portLink = Paths.get("." + line.lastElement() + ".port");
-                portNumber = Files.readSymbolicLink(portLink).toString();
-                SocketChannel socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
-
-                socket.configureBlocking(false);
-                socket.register(selector, SelectionKey.OP_READ);
-
-                activeStations.add(socket);
-                socketFdToIfaceName.put(socket, line);
-                ifaceNameTosocketFd.put(line.get(0), socket);
-
-//                Scanner scanner = new Scanner(System.in); need 2 inits?
-                System.out.println("Connected to the Chat Server at: " + socket.socket().getRemoteSocketAddress() + " through port " + socket.socket().getLocalPort());
-            }
-        } catch (IOException e) {
+            handleConnections(selector);
+        } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
         }
-//        System.out.println("activeStations "+activeStations);
+
+        // Create and start the receiving thread for user input
         receivingThread = new Thread(() -> {
             System.out.println("You can start chatting now. Press CTRL + C to quit.");
             String userInput;
+            if(Objects.equals(s1.comp_name, "-no")){
+                System.out.println("STATION>");
+            }else{
+                System.out.println("ROUTER>");
+            }
             while ((userInput = scanner.nextLine()) != null) {
                 try {
+                    if(Objects.equals(s1.comp_name, "-no")){
+                        System.out.println("STATION>");
+                    }else{
+                        System.out.println("ROUTER>");
+                    }
                     List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                     if (!userInputVector.isEmpty()) {
                         String firstElement = userInputVector.get(0);
                         if (firstElement.equals("quit")) {
                             System.exit(0);
-                        }
-                        else if (firstElement.equals("show")) {
+                        } else if (firstElement.equals("show")) {
                             String secondElement = userInputVector.get(1);
                             if (secondElement.equals("host")) {
                                 Map<String, Vector<String>> hosts = loadAndPrintHosts(("hosts"));
@@ -106,9 +106,14 @@ public class Station {
                                         Vector<String> nextIface = socketFdToIfaceName.get(next_fd);
                                         String srcIP = nextIface.get(1);
                                         String srcMac = nextIface.get(3);
-                                        Message outgoingMessage = new Message(srcIP, destinationIP, userInputVector.get(2)); // IPpacket
 
-                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).equals("")) {
+                                        StringBuilder messageBuilder = new StringBuilder();
+                                        for (int i = 2; i < userInputVector.size(); i++) {
+                                            messageBuilder.append(userInputVector.get(i)).append(" ");
+                                        }
+                                        String completeMessage = messageBuilder.toString().trim();
+                                        Message outgoingMessage = new Message(srcIP, destinationIP, completeMessage);
+                                        if (Arp.getMac(nextHopNdNextIface.get("nextHop")).isEmpty()) {
                                             System.out.println("Entry not in ARP cache");
                                             System.out.println("Sending an ARP request through interface " + nextHopNdNextIface.get("nextIface"));
                                             System.out.println("Adding packet to pending queue " + nextHopNdNextIface.get("nextHop"));
@@ -150,13 +155,14 @@ public class Station {
             }
         });
         receivingThread.start();
-
+        // Continuously handle selected keys
         while (true) {
             selector.select();
             if (true) {
                 selector.selectedKeys().forEach((socket) -> {
                     if (socket.isReadable()) {
                         try {
+                            // Handle incoming data from stations
                             handleStation(s1, socket);
                         } catch (ClassNotFoundException e) {
                             e.printStackTrace();
@@ -169,10 +175,62 @@ public class Station {
         }
     }
 
+    private static void handleConnections(Selector selector) throws IOException, InterruptedException {
+        List<String> successCon = new ArrayList<>();
+        while (successCon.size() != ifaceData.size() && tryCount-- > 0) {
+            System.out.println("trying " + (5 - tryCount) + " for connections");
+            for (Vector<String> line : ifaceData) {
+                if (!successCon.contains(line.firstElement())) {
+                    try {
+                        Path addressLink = Paths.get("." + line.lastElement() + ".addr");
+                        String ipAddress = Files.readSymbolicLink(addressLink).toString();
+
+                        Path portLink = Paths.get("." + line.lastElement() + ".port");
+                        String portNumber = Files.readSymbolicLink(portLink).toString();
+                        SocketChannel socket = SocketChannel.open(new InetSocketAddress(ipAddress, Integer.parseInt(portNumber)));
+
+                        socket.configureBlocking(false);
+                        socket.register(selector, SelectionKey.OP_READ);
+
+                        activeStations.add(socket);
+                        socketFdToIfaceName.put(socket, line);
+                        ifaceNameTosocketFd.put(line.get(0), socket);
+                    } catch (IOException ignore) {
+                    }
+                }
+            }
+            Thread.sleep(2000);
+            selector.selectNow();
+            Set<SelectionKey> selectionKeys = selector.selectedKeys();
+            for (SelectionKey key : selectionKeys) {
+                if (key.isReadable()) {
+                    ByteBuffer bytes = ByteBuffer.allocate(100);
+                    SocketChannel socketChannel = (SocketChannel) key.channel();
+                    if (socketChannel.read(bytes) > 0) {
+                        System.out.println("Accept\nConnected to " + socketFdToIfaceName.get(socketChannel).lastElement());
+                        successCon.add(socketFdToIfaceName.get(socketChannel).firstElement());
+                    }
+                }
+            }
+            selectionKeys.clear();
+        }
+        for (Vector<String> line : ifaceData) {
+            if (!successCon.contains(line.firstElement())) {
+                System.out.println("Reject\nConnection rejected by bridge " + line.lastElement());
+            }
+        }
+    }
+
+    // Method to handle incoming data from stations
     private static void handleStation(Station s1, SelectionKey socketKey) throws ClassNotFoundException {
         SocketChannel socket = (SocketChannel) socketKey.channel();
         Vector<String> interFace = socketFdToIfaceName.get(socket);
-        System.out.println("\nSTATION: " + interFace.get(0) + ">");
+        if(Objects.equals(s1.comp_name, "-no")){
+            System.out.println("\nSTATION: " + interFace.get(0) + ">");
+        }else{
+            System.out.println("\nROUTER: " + interFace.get(0) + ">");
+        }
+
         try {
             ByteBuffer bytes = ByteBuffer.allocate(4096);
             int bytesRead = socket.read(bytes);
@@ -185,6 +243,8 @@ public class Station {
             bytes.flip();
             System.out.println("Received ethernet frame ");
             EthernetFrame ethernetFrame = EthernetFrame.deserialize(bytes);
+//            System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
+            // Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
             System.out.println(ethernetFrame.getDestinationIP() + interFace.get(1));
 //            Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
             if (ethernetFrame.getType().equals("ARP_REQUEST")) {
@@ -201,14 +261,14 @@ public class Station {
                     System.out.println("Not mine. My mac is " + interFace.get(3));
                 }
             } else if (ethernetFrame.getType().equals("ARP_RESPONSE")) {
-                System.out.println("Received an arp response " + ethernetFrame.getDestinationMac()+interFace.get(3));
+                System.out.println("Received an arp response to " +ethernetFrame.getDestinationMac() + " My MAC Address is: "+interFace.get(3));
                 if (ethernetFrame.getDestinationMac().equals(interFace.get(3))) {
                     System.out.println("The ARP response is for me!");
-                    Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
+                   Arp.addArpCache(ethernetFrame.getSourceIP(), ethernetFrame.getSourceMac());
                     List<Message> packets = s1.pq.getPendingPacket(ethernetFrame.getSourceIP());
                     for (Message packet : packets) {
                         System.out.println("Sending dataframe to destination " + ethernetFrame.getDestinationMac());
-                        System.out.println("Packet details "+packet.getMessage()+packet.getSourceIP()+packet.getDestinationIP()); // [potti]
+                        System.out.println("Packet details \n Message: " + packet.getMessage() + "\n Source IP: "+packet.getSourceIP() +"\n Destination IP: "+ packet.getDestinationIP());
 //                        System.out.println("===> "+ ethernetFrame.getDestinationMac());
                         s1.ethernetFrame.createDF("DATAFRAME", packet, ethernetFrame.getDestinationIP(), ethernetFrame.getSourceIP(), ethernetFrame.getDestinationMac(), ethernetFrame.getSourceMac());
                         byte[] serializedFrame = s1.ethernetFrame.serialize();
@@ -219,7 +279,7 @@ public class Station {
                     s1.pq.removePendingPacket(ethernetFrame.getSourceIP());
                 }
             } else if (ethernetFrame.getType().equals("DATAFRAME")) {
-                System.out.println("Received dataframe to "+ethernetFrame.getDestinationMac() + ", My Mac is "+ interFace.get(3));
+                System.out.println("Received dataframe to " + ethernetFrame.getDestinationMac() + ", My Mac is " + interFace.get(3));
                 if (Objects.equals(ethernetFrame.getDestinationMac(), interFace.get(3))) {
                     Message packet = ethernetFrame.getPacket();
                     if (ethernetFrame.getDestinationIP().equals(interFace.get(1)) && !s1.comp_name.equals("-route")) {
@@ -251,7 +311,7 @@ public class Station {
                             System.out.println("Destination IP: " + packet.getDestinationIP());
                             System.out.println("Source IP: " + packet.getSourceIP());
                             System.out.println("***************************");
-                            System.out.println(":::"+Arp.getMac(nextHopNdNextIface.get("nextHop")));
+                            System.out.println(":::" + Arp.getMac(nextHopNdNextIface.get("nextHop")));
                             s1.ethernetFrame.createDF("DATAFRAME", packet, interFace.get(1), nextHopNdNextIface.get("nextHop"), interFace.get(2), Arp.getMac(nextHopNdNextIface.get("nextHop")));
                             byte[] serializedFrame = s1.ethernetFrame.serialize();
                             ByteBuffer frameBuffer = ByteBuffer.wrap(serializedFrame);
@@ -272,20 +332,14 @@ public class Station {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+        System.out.println("STATION>");
     }
 
+    // Method to load and print interface data from a file
     private static Vector<Vector<String>> loadAndPrintIfaces(String ifaceFileName) {
         Vector<Vector<String>> ifaceData = new Vector<>();
         try {
-            File ifacePath = new File("ifaces");
-            File[] ifaceList = ifacePath.listFiles();
-            File matchingFile = null;
-            for (File ifaceFile : ifaceList) {
-                if (ifaceFile.getName().equals(ifaceFileName)) {
-                    matchingFile = ifaceFile;
-                    break;
-                }
-            }
+            File matchingFile = new File(ifaceFileName);
             System.out.println("reading iface... ");
             System.out.println();
             assert matchingFile != null;
@@ -309,18 +363,11 @@ public class Station {
         return ifaceData;
     }
 
+    // Method to load and print routing table data from a file
     private static Vector<Vector<String>> loadAndPrintRtables(String rtableFileName) {
         Vector<Vector<String>> rtableData = new Vector<>();
         try {
-            File rtable = new File("rtables");
-            File[] rtableList = rtable.listFiles();
-            File matchingFile = null;
-            for (File rtableFile : rtableList) {
-                if (rtableFile.getName().equals(rtableFileName)) {
-                    matchingFile = rtableFile;
-                    break;
-                }
-            }
+            File matchingFile = new File(rtableFileName);
             System.out.println();
             System.out.println("reading rtable...");
             System.out.println();
@@ -344,6 +391,7 @@ public class Station {
         return rtableData;
     }
 
+    // Method to load and print host data from a file
     private static Map<String, Vector<String>> loadAndPrintHosts(String fileName) {
         Map<String, Vector<String>> hostData = new HashMap<>();
         try {
@@ -366,6 +414,7 @@ public class Station {
         return hostData;
     }
 
+    // Method to quit the station
     public static void quit(SocketChannel socket) {
         System.out.println("in quit");
         try {
@@ -378,6 +427,7 @@ public class Station {
         System.exit(0);
     }
 
+    // Method to find the next hop in the routing table
     private Map<String, String> findNextHop(String destinationIP, Vector<Vector<String>> rtable, Vector<Vector<String>> iface) {
         Map<String, String> hopAndIface = new HashMap<>();
         for (Vector<String> line : rtable) {
@@ -423,6 +473,7 @@ public class Station {
         return null;
     }
 
+    // Method to load configuration files and initialize the station
     public void load_files() {
         System.out.println();
         System.out.println("initializing..");

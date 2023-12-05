@@ -1,5 +1,6 @@
 ### Log
-Implemented a concept of chat server and chat client between 
+
+Implemented a concept of chat server and chat client between
 Vectors for ifaces and rtables
 Create function to print all ifaces and rtables
 Create lan_addr and port files in bridge

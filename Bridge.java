@@ -1,13 +1,4 @@
-//import sun.misc.Signal;
-//import sun.misc.SignalHandler;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -15,49 +6,33 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Scanner;
 
 public class Bridge {
-    String lan_name;
-    String num_ports;
-
-    private SlTable sl;
-
     private static final Scanner scanner = new Scanner(System.in);
+    public static List<SocketChannel> activeClients = new ArrayList<>();
+    static int num_ports;
     private static Thread receivingThread;
+    private static ServerSocketChannel serverChannel;
+    private static Selector selector;
+    private static boolean serverRunning = true;
 
+    String lan_name;
+    private SlTable sl;
     public Bridge(String l_name, String n_ports) {
         lan_name = l_name;
-        num_ports = n_ports;
+        num_ports = Integer.parseInt(n_ports);
         this.sl = new SlTable();
         this.sl.myTimer();
     }
 
-    //    private static final Signal SIGNAL = new Signal("INT");
-    public static List<SocketChannel> activeClients = new ArrayList<>();
-
-//    public static List<SocketChannel> activeClients = Collections.synchronizedList(nrmlList);
-
-    private static ServerSocketChannel serverChannel;
-    private static Selector selector;
-    private static boolean serverRunning = true;
-//    private static final SignalHandler signalHandler = signal -> {
-//        try {
-//            serverRunning = false;
-//            selector.keys().forEach(SelectionKey::cancel);
-//            selector.close();
-//            serverChannel.close();
-//            System.out.println("Server Exiting...");
-//            System.exit(0);
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
-//    };
-
+    // Creates a symbolic link for the LAN's IP address.
     private static void createAddressSymbolicLink(String lanName, String ipAddress) {
         try {
             Path linkPath = Paths.get("." + lanName + ".addr");
@@ -68,6 +43,7 @@ public class Bridge {
         }
     }
 
+    // Creates a symbolic link for the LAN's port number.
     private static void createPortSymbolicLink(String lanName, int portNumber) {
         try {
             Path linkPath = Paths.get("." + lanName + ".port");
@@ -91,38 +67,37 @@ public class Bridge {
 
             serverChannel.register(selector, SelectionKey.OP_ACCEPT);
 
-//            Signal.handle(SIGNAL, signalHandler);
-
             String ipAddress = serverChannel.socket().getInetAddress().getHostName();
             createAddressSymbolicLink(b1.lan_name, ipAddress);
 
             int portNumber = serverChannel.socket().getLocalPort();
             createPortSymbolicLink(b1.lan_name, portNumber);
 
+            // Start a thread for receiving user input
             receivingThread = new Thread(() -> {
                 String userInput;
+                System.out.println("BRIDGE>");
                 while ((userInput = scanner.nextLine()) != null) {
                     try {
+                        System.out.println("BRIDGE>");
                         List<String> userInputVector = Arrays.asList(userInput.trim().split("\\s+"));
                         if (!userInputVector.isEmpty()) {
-                            System.out.println("userINput: " + userInputVector);
 
                             if (userInputVector.get(0).equals("quit")) {
+                                // Disconnect all stations and exit the server
                                 ServerSocketChannel mainChannel = serverChannel;
                                 List<SocketChannel> connectedStations = activeClients;
                                 for (SocketChannel connectedStation : connectedStations
                                 ) {
                                     System.out.println("Disconnecting station " + connectedStation.getRemoteAddress().toString().split("/")[1]);
-//                                    connectedStations.remove(connectedStation);
                                     connectedStation.close();
                                 }
                                 mainChannel.close();
                                 System.exit(0);
-                            }
-                            else if (userInputVector.get(0).equals("show") && userInputVector.get(1).equals("sl")) {
+                            } else if (userInputVector.get(0).equals("show") && userInputVector.get(1).equals("sl")) {
+                                // Display the SL table
                                 b1.sl.printSl();
-                            }
-                            else{
+                            } else {
                                 System.out.println("Not a correct command");
                             }
                         }
@@ -132,28 +107,35 @@ public class Bridge {
                 }
             });
             receivingThread.start();
+            // Main loop for handling server events
             while (serverRunning) {
                 selector.select();
                 if (serverRunning) {
                     selector.selectedKeys().forEach((socket) -> {
                         if (socket.isAcceptable()) {
-                            try {
-                                ServerSocketChannel server = (ServerSocketChannel) socket.channel();
-                                SocketChannel client = server.accept();
-                                client.configureBlocking(false);
-                                client.register(selector, SelectionKey.OP_READ);
-                                activeClients.add(client);
-                                System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
-                            } catch (IOException e) {
-                                System.out.println("Cannot accept connection");
+                            if (num_ports > 0) {
+                                try {
+                                    // Accept incoming connection, configure the client, and register for reading
+                                    ServerSocketChannel server = (ServerSocketChannel) socket.channel();
+                                    SocketChannel client = server.accept();
+                                    client.configureBlocking(false);
+                                    client.register(selector, SelectionKey.OP_READ);
+                                    activeClients.add(client);
+                                    client.write(ByteBuffer.wrap("accept".getBytes()));
+                                    num_ports--;
+                                    System.out.println("Connected from: " + client.getRemoteAddress().toString().split("/")[1]);
+                                } catch (IOException e) {
+                                    System.out.println("Cannot accept connection");
+                                }
                             }
                         } else if (socket.isReadable()) {
                             try {
+                                // Handle incoming data from a connected client
                                 handleClient(b1, socket);
                             } catch (ClassNotFoundException e) {
                                 e.printStackTrace();
                             }
-                        } else{
+                        } else {
                             System.out.println("here");
                         }
                     });
@@ -165,12 +147,12 @@ public class Bridge {
         }
     }
 
+    // Handles communication with a connected client.
     private static void handleClient(Bridge bridge, SelectionKey socket) throws ClassNotFoundException {
         System.out.println("BRIDGE>");
         try {
             SocketChannel client = (SocketChannel) socket.channel();
             ByteBuffer bytes = ByteBuffer.allocate(1024);
-//            System.out.println("size: "+activeClients.size());
             int read = client.read(bytes);
             if (read < 0) {
                 System.out.println("Disconnected from: " + client.getRemoteAddress().toString().split("/")[1]);
@@ -178,6 +160,7 @@ public class Bridge {
                 bridge.sl.remove(client);
                 client.close();
                 socket.cancel();
+                num_ports++;
                 return;
             }
 
@@ -189,43 +172,21 @@ public class Bridge {
                 EthernetFrame frame = deserializeFrame(serializedFrame);
                 bridge.sl.addEntry(frame.getSourceMac(), client, activeClients.indexOf(client)); // define sl table properly [next implementation]
                 byte[] serialized = serializedFrame(frame);
-//                if (Objects.equals(frame.getType(), "DATAFRAME")) {
-                    if (bridge.sl.isKey(frame.getDestinationMac())) {
-                        bridge.sl.resetTTl(frame.getDestinationMac());
-                        SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-                        System.out.println("Forwarding frame....."+activeClients.indexOf(destFD));
-                        destFD.write(ByteBuffer.wrap(serialized));
-                    } else {
-                        System.out.println("Found no entry in SL table. Broadcasting frame.....");
-                        for (SocketChannel otherClient : activeClients) {
-                            if (client != otherClient) {
-                                otherClient.write(ByteBuffer.wrap(serialized));
-                            }
+                if (bridge.sl.isKey(frame.getDestinationMac())) {
+                    bridge.sl.resetTTl(frame.getDestinationMac());
+                    SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
+                    System.out.println("Forwarding frame....." + activeClients.indexOf(destFD));
+                    destFD.write(ByteBuffer.wrap(serialized));
+                } else {
+                    System.out.println("Found no entry in SL table. Broadcasting frame.....");
+                    for (SocketChannel otherClient : activeClients) {
+                        if (client != otherClient) {
+                            otherClient.write(ByteBuffer.wrap(serialized));
                         }
                     }
-//                }
-//                else if (Objects.equals(frame.getType(), "ARP_REQUEST")) {
-//                    if (bridge.sl.isKey(frame.getDestinationMac())) {
-//                        bridge.sl.resetTTl(frame.getDestinationMac());
-//                        SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-//                        destFD.write(ByteBuffer.wrap(serialized));
-//                    } else {
-//                        for (SocketChannel otherClient : activeClients) {
-//                            if (client != otherClient) {
-//                                System.out.println("Sending ARP request....." + activeClients.indexOf(otherClient));
-//                                otherClient.write(ByteBuffer.wrap(serialized));
-//                            }
-//                        }
-//                    }
-//                }
-//                else if (Objects.equals(frame.getType(), "ARP_RESPONSE")) {
-//                    System.out.println("Received arp response");
-//                    SocketChannel destFD = bridge.sl.getEntry(frame.getDestinationMac());
-//                    destFD.write(ByteBuffer.wrap(serialized));
-//                }
+                }
             } catch (EOFException e) {
                 e.printStackTrace();
-                // Handle the EOFException gracefully (e.g., close the socket)
                 System.out.println("Connection closed by the client: " + client.getRemoteAddress().toString().split("/")[1]);
                 activeClients.remove(client);
                 client.close();
